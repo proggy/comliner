@@ -1,0 +1,428 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html><head><title>Python: package frog</title>
+</head><body bgcolor="#f0f0f8">
+
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="heading">
+<tr bgcolor="#7799ee">
+<td valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial">&nbsp;<br><big><big><strong>frog</strong></big></big> (version 0.3)</font></td
+><td align=right valign=bottom
+><font color="#ffffff" face="helvetica, arial"><a href=".">index</a><br><a href="file:/home/djung/lib/frog/__init__.py">/home/djung/lib/frog/__init__.py</a></font></td></tr></table>
+    <p><tt>Make&nbsp;programs&nbsp;out&nbsp;of&nbsp;your&nbsp;Python&nbsp;functions&nbsp;that&nbsp;can&nbsp;be&nbsp;run&nbsp;from&nbsp;the<br>
+command&nbsp;line&nbsp;by&nbsp;simply&nbsp;adding&nbsp;a&nbsp;decorator&nbsp;in&nbsp;front&nbsp;of&nbsp;the&nbsp;function.&nbsp;The<br>
+programs&nbsp;will&nbsp;have&nbsp;a&nbsp;commandline&nbsp;interface&nbsp;based&nbsp;on&nbsp;the&nbsp;optparse&nbsp;module,<br>
+and&nbsp;load&nbsp;data&nbsp;from&nbsp;and&nbsp;save&nbsp;data&nbsp;to&nbsp;files&nbsp;(HDF5&nbsp;format).<br>
+&nbsp;<br>
+The&nbsp;module&nbsp;name&nbsp;"frog"&nbsp;is&nbsp;meant&nbsp;to&nbsp;be&nbsp;a&nbsp;silly&nbsp;shortcut&nbsp;for<br>
+"function&nbsp;program".<br>
+&nbsp;<br>
+Simple&nbsp;example:<br>
+&nbsp;<br>
+&gt;&nbsp;#&nbsp;file&nbsp;"my_module.py"<br>
+&gt;&nbsp;from&nbsp;frog&nbsp;import&nbsp;<a href="#Frog">Frog</a><br>
+&gt;&nbsp;@<a href="#Frog">Frog</a>(inmap=dict(x='$@/dset'),&nbsp;preproc=dict(x=<a href="#list_of">list_of</a>(float)))<br>
+&gt;&nbsp;def&nbsp;mean(x):<br>
+&gt;&nbsp;&nbsp;&nbsp;return&nbsp;sum(x)/len(x)<br>
+&nbsp;<br>
+Now,&nbsp;you&nbsp;can&nbsp;create&nbsp;a&nbsp;small&nbsp;executable&nbsp;script&nbsp;with&nbsp;the&nbsp;following&nbsp;content:<br>
+&gt;&nbsp;import&nbsp;sys,&nbsp;my_module<br>
+&gt;&nbsp;sys.exit(my_module._mean())<br>
+&nbsp;<br>
+The&nbsp;way&nbsp;the&nbsp;frog&nbsp;is&nbsp;configured&nbsp;in&nbsp;this&nbsp;example,&nbsp;it&nbsp;expects&nbsp;you&nbsp;to&nbsp;specify<br>
+a&nbsp;bunch&nbsp;of&nbsp;HDF5&nbsp;data&nbsp;files,&nbsp;where&nbsp;each&nbsp;file&nbsp;has&nbsp;a&nbsp;dataset&nbsp;called&nbsp;"dset",&nbsp;and<br>
+the&nbsp;function&nbsp;will&nbsp;be&nbsp;called&nbsp;with&nbsp;the&nbsp;list&nbsp;[x1,&nbsp;x2,&nbsp;x3,&nbsp;...]<br>
+(length&nbsp;==&nbsp;number&nbsp;of&nbsp;files).&nbsp;By&nbsp;default,&nbsp;the&nbsp;result&nbsp;of&nbsp;the&nbsp;function&nbsp;goes&nbsp;to<br>
+STDOUT&nbsp;(displayed&nbsp;on&nbsp;the&nbsp;screen).&nbsp;However,&nbsp;the&nbsp;behavior&nbsp;can&nbsp;be&nbsp;configured&nbsp;in<br>
+various&nbsp;ways&nbsp;and&nbsp;of&nbsp;course&nbsp;strongly&nbsp;depends&nbsp;on&nbsp;the&nbsp;user's&nbsp;requirements.<br>
+&nbsp;<br>
+Major&nbsp;changes&nbsp;in&nbsp;version&nbsp;0.3:<br>
+--&gt;&nbsp;output&nbsp;mapping&nbsp;is&nbsp;now&nbsp;a&nbsp;dictionary,&nbsp;just&nbsp;like&nbsp;input&nbsp;mapping<br>
+--&gt;&nbsp;output&nbsp;mapping&nbsp;can&nbsp;now&nbsp;contain&nbsp;references&nbsp;to&nbsp;metadata,&nbsp;like&nbsp;DATE&nbsp;and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;TIMINGS<br>
+&nbsp;<br>
+To&nbsp;do:<br>
+--&gt;&nbsp;enable&nbsp;parallel&nbsp;execution&nbsp;if&nbsp;in&nbsp;independent&nbsp;execution&nbsp;mode<br>
+--&gt;&nbsp;warn&nbsp;about&nbsp;usage&nbsp;with&nbsp;interactively&nbsp;defined&nbsp;functions?&nbsp;(no&nbsp;__name__)<br>
+--&gt;&nbsp;be&nbsp;able&nbsp;to&nbsp;specify&nbsp;a&nbsp;fixed&nbsp;file,&nbsp;so&nbsp;instead&nbsp;of&nbsp;"$1/some/dataset",&nbsp;be&nbsp;able<br>
+&nbsp;&nbsp;&nbsp;&nbsp;to&nbsp;specify&nbsp;"some/file.h5/some/dataset"&nbsp;(for&nbsp;input&nbsp;and&nbsp;output&nbsp;as&nbsp;well)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;setting&nbsp;default&nbsp;values&nbsp;in&nbsp;input&nbsp;mapping&nbsp;would&nbsp;then&nbsp;only&nbsp;be&nbsp;possible&nbsp;for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;non-strings&nbsp;(strings&nbsp;were&nbsp;already&nbsp;restricted&nbsp;before,&nbsp;could&nbsp;not&nbsp;start&nbsp;with<br>
+&nbsp;&nbsp;&nbsp;&nbsp;"$",&nbsp;"%"&nbsp;or&nbsp;"#")<br>
+--&gt;&nbsp;allow&nbsp;dynamic&nbsp;mappings,&nbsp;containing&nbsp;placeholders&nbsp;like&nbsp;{option=default}<br>
+&nbsp;&nbsp;&nbsp;&nbsp;(also&nbsp;multiple),&nbsp;so&nbsp;that&nbsp;options&nbsp;can&nbsp;be&nbsp;used&nbsp;to&nbsp;set&nbsp;dsetnames/paths&nbsp;or&nbsp;also<br>
+&nbsp;&nbsp;&nbsp;&nbsp;filenames/paths<br>
+--&gt;&nbsp;allow&nbsp;slices&nbsp;in&nbsp;mappings,&nbsp;like&nbsp;"$1:/dset"&nbsp;(all&nbsp;but&nbsp;the&nbsp;first&nbsp;file)&nbsp;or<br>
+&nbsp;&nbsp;&nbsp;&nbsp;"$:4"&nbsp;(the&nbsp;first&nbsp;four&nbsp;arguments)&nbsp;or&nbsp;"$:"&nbsp;(all&nbsp;arguments,&nbsp;equivalent&nbsp;to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;"$@")<br>
+--&gt;&nbsp;case&nbsp;dep+@:&nbsp;be&nbsp;able&nbsp;to&nbsp;restrict&nbsp;number&nbsp;of&nbsp;input/output&nbsp;arguments&nbsp;(min/max)?<br>
+--&gt;&nbsp;understand&nbsp;combined&nbsp;filename/dataset&nbsp;paths,&nbsp;including&nbsp;patterns&nbsp;in&nbsp;both<br>
+&nbsp;&nbsp;&nbsp;&nbsp;parts&nbsp;of&nbsp;the&nbsp;path&nbsp;(feature&nbsp;which&nbsp;is&nbsp;already&nbsp;provided&nbsp;through&nbsp;h5obj.tools)<br>
+--&gt;&nbsp;in&nbsp;addition,&nbsp;access&nbsp;dataset&nbsp;attributes,&nbsp;e.g.&nbsp;inmap=dict(a='$0/dset/attr')<br>
+--&gt;&nbsp;enable&nbsp;frog&nbsp;configuration&nbsp;options&nbsp;--preproc&nbsp;and&nbsp;--postproc?&nbsp;(update&nbsp;dict)<br>
+--&gt;&nbsp;even&nbsp;if&nbsp;no&nbsp;arguments&nbsp;are&nbsp;expected&nbsp;at&nbsp;all,&nbsp;make&nbsp;sure&nbsp;the&nbsp;function&nbsp;is&nbsp;still<br>
+&nbsp;&nbsp;&nbsp;&nbsp;executed<br>
+--&gt;&nbsp;reroute&nbsp;STDOUT&nbsp;and&nbsp;STDERR&nbsp;to&nbsp;file?&nbsp;could&nbsp;be&nbsp;important&nbsp;for&nbsp;parallel<br>
+&nbsp;&nbsp;&nbsp;&nbsp;execution.&nbsp;DENIED!<br>
+--&gt;&nbsp;if&nbsp;default&nbsp;value&nbsp;is&nbsp;True&nbsp;(or&nbsp;bool&nbsp;in&nbsp;general),&nbsp;behave&nbsp;accordingly<br>
+--&gt;&nbsp;convert&nbsp;<a href="#Frog">Frog</a>&nbsp;class&nbsp;to&nbsp;a&nbsp;function&nbsp;(not&nbsp;really&nbsp;neccessary,&nbsp;but&nbsp;cleaner)<br>
+--&gt;&nbsp;enable&nbsp;timings&nbsp;in&nbsp;milliseconds,&nbsp;reformat,&nbsp;make&nbsp;a&nbsp;new&nbsp;_nicetime&nbsp;function<br>
+&nbsp;&nbsp;&nbsp;&nbsp;mapping<br>
+--&gt;&nbsp;allow&nbsp;"$0"&nbsp;in&nbsp;output&nbsp;mapping&nbsp;(as&nbsp;a&nbsp;source),&nbsp;e.g.&nbsp;to&nbsp;access&nbsp;filename<br>
+--&gt;&nbsp;option&nbsp;to&nbsp;"close&nbsp;gaps",&nbsp;i.e.&nbsp;only&nbsp;execute&nbsp;if&nbsp;output&nbsp;datasets&nbsp;do&nbsp;not&nbsp;yet<br>
+&nbsp;&nbsp;&nbsp;&nbsp;exist<br>
+--&gt;&nbsp;enable&nbsp;option&nbsp;to&nbsp;omit&nbsp;missing&nbsp;input&nbsp;datasets&nbsp;also&nbsp;in&nbsp;sequential&nbsp;mode?<br>
+--&gt;&nbsp;omit&nbsp;whole&nbsp;file&nbsp;when&nbsp;one&nbsp;input&nbsp;dataset&nbsp;is&nbsp;missing?</tt></p>
+<p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#aa55cc">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Package Contents</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#aa55cc"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><table width="100%" summary="list"><tr><td width="25%" valign=top></td><td width="25%" valign=top></td><td width="25%" valign=top></td><td width="25%" valign=top></td></tr></table></td></tr></table><p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#ee77aa">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Classes</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#ee77aa"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><dl>
+<dt><font face="helvetica, arial"><a href="__builtin__.html#object">__builtin__.object</a>
+</font></dt><dd>
+<dl>
+<dt><font face="helvetica, arial"><a href="frog.html#Frog">Frog</a>
+</font></dt><dt><font face="helvetica, arial"><a href="frog.html#apply_all">apply_all</a>
+</font></dt><dt><font face="helvetica, arial"><a href="frog.html#expressions_of">expressions_of</a>
+</font></dt><dt><font face="helvetica, arial"><a href="frog.html#items_of">items_of</a>
+</font></dt><dt><font face="helvetica, arial"><a href="frog.html#list_of">list_of</a>
+</font></dt><dt><font face="helvetica, arial"><a href="frog.html#tuple_of">tuple_of</a>
+</font></dt></dl>
+</dd>
+</dl>
+ <p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#ffc8d8">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#000000" face="helvetica, arial"><a name="Frog">class <strong>Frog</strong></a>(<a href="__builtin__.html#object">__builtin__.object</a>)</font></td></tr>
+    
+<tr><td bgcolor="#ffc8d8"><tt>&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%">Methods defined here:<br>
+<dl><dt><a name="Frog-__call__"><strong>__call__</strong></a>(self, func)</dt><dd><tt>When&nbsp;the&nbsp;decorator&nbsp;is&nbsp;applied&nbsp;to&nbsp;the&nbsp;user's&nbsp;function,&nbsp;this&nbsp;method&nbsp;is<br>
+called&nbsp;with&nbsp;the&nbsp;function&nbsp;<a href="__builtin__.html#object">object</a>.&nbsp;It&nbsp;will&nbsp;not&nbsp;touch&nbsp;the&nbsp;function&nbsp;<a href="__builtin__.html#object">object</a><br>
+itself&nbsp;and&nbsp;return&nbsp;it&nbsp;in&nbsp;the&nbsp;end.&nbsp;But&nbsp;an&nbsp;additional&nbsp;wrapper&nbsp;function<br>
+will&nbsp;be&nbsp;created&nbsp;in&nbsp;the&nbsp;same&nbsp;module&nbsp;which&nbsp;has&nbsp;the&nbsp;same&nbsp;name&nbsp;as&nbsp;the<br>
+user's&nbsp;function&nbsp;but&nbsp;with&nbsp;a&nbsp;leading&nbsp;underscore.&nbsp;Further&nbsp;more,&nbsp;the<br>
+wrapper&nbsp;function&nbsp;will&nbsp;have&nbsp;the&nbsp;attribute&nbsp;"__frog__"&nbsp;which&nbsp;is&nbsp;set&nbsp;to<br>
+True.&nbsp;In&nbsp;this&nbsp;way,&nbsp;it&nbsp;may&nbsp;be&nbsp;checked&nbsp;which&nbsp;of&nbsp;the&nbsp;functions&nbsp;defined&nbsp;in<br>
+a&nbsp;module&nbsp;are&nbsp;frog&nbsp;wrappers.&nbsp;The&nbsp;executable&nbsp;script&nbsp;is&nbsp;supposed&nbsp;to&nbsp;call<br>
+that&nbsp;wrapper&nbsp;function,&nbsp;i.e.&nbsp;using&nbsp;"sys.exit(my_module._my_wrapper())".</tt></dd></dl>
+
+<dl><dt><a name="Frog-__init__"><strong>__init__</strong></a>(self, inmap<font color="#909090">=None</font>, outmap<font color="#909090">=None</font>, preproc<font color="#909090">=None</font>, postproc<font color="#909090">=None</font>, opttypes<font color="#909090">=None</font>, optdoc<font color="#909090">=None</font>, shortopts<font color="#909090">=None</font>, longopts<font color="#909090">=None</font>, prolog<font color="#909090">=''</font>, epilog<font color="#909090">=''</font>, usage<font color="#909090">=''</font>, version<font color="#909090">=''</font>, wrapname<font color="#909090">=''</font>, overwrite<font color="#909090">=None</font>, bar<font color="#909090">=False</font>, stdin_sep<font color="#909090">=None</font>, stdout_sep<font color="#909090">=None</font>, first<font color="#909090">=None</font>, last<font color="#909090">=None</font>, omit_missing<font color="#909090">=False</font>)</dt><dd><tt>Initialize&nbsp;and&nbsp;configure&nbsp;frog&nbsp;decorator.</tt></dd></dl>
+
+<dl><dt><a name="Frog-apply_postproc"><strong>apply_postproc</strong></a>(self, outdata)</dt><dd><tt>Apply&nbsp;postprocessors&nbsp;to&nbsp;output&nbsp;data.</tt></dd></dl>
+
+<dl><dt><a name="Frog-apply_preproc"><strong>apply_preproc</strong></a>(self, indata)</dt><dd><tt>Apply&nbsp;preprocessors&nbsp;to&nbsp;input&nbsp;data.</tt></dd></dl>
+
+<dl><dt><a name="Frog-auto_outmap"><strong>auto_outmap</strong></a>(self, outmap, outdata)</dt><dd><tt>Automatically&nbsp;fill&nbsp;output&nbsp;mapping&nbsp;with&nbsp;standard&nbsp;mappings&nbsp;if&nbsp;it&nbsp;is<br>
+still&nbsp;empty.</tt></dd></dl>
+
+<dl><dt><a name="Frog-auto_usage"><strong>auto_usage</strong></a>(self, tninargs, tnoutargs, indep, inmap, outmap)</dt><dd><tt>Generate&nbsp;a&nbsp;suitable&nbsp;usage&nbsp;string&nbsp;based&nbsp;on&nbsp;frog&nbsp;configuration.</tt></dd></dl>
+
+<dl><dt><a name="Frog-display_keywords"><strong>display_keywords</strong></a>(self, dictionary)</dt></dl>
+
+<dl><dt><a name="Frog-display_list"><strong>display_list</strong></a>(self, iterable)</dt></dl>
+
+<dl><dt><a name="Frog-display_object"><strong>display_object</strong></a>(self, obj)</dt></dl>
+
+<dl><dt><a name="Frog-divide_args"><strong>divide_args</strong></a>(self, args, tninargs, tnoutargs, indep)</dt><dd><tt>Divide&nbsp;arguments&nbsp;into&nbsp;two&nbsp;parts&nbsp;(input&nbsp;and&nbsp;output).&nbsp;If&nbsp;an&nbsp;error&nbsp;is<br>
+found,&nbsp;return&nbsp;the&nbsp;error&nbsp;code.&nbsp;Otherwise,&nbsp;return&nbsp;a&nbsp;tuple&nbsp;of&nbsp;two<br>
+lists.</tt></dd></dl>
+
+<dl><dt><a name="Frog-error_arg_pairs"><strong>error_arg_pairs</strong></a>(self)</dt></dl>
+
+<dl><dt><a name="Frog-error_dset_exists"><strong>error_dset_exists</strong></a>(self, dsetname, filename)</dt></dl>
+
+<dl><dt><a name="Frog-error_dset_not_found"><strong>error_dset_not_found</strong></a>(self, dsetname, filename)</dt></dl>
+
+<dl><dt><a name="Frog-error_dset_omit"><strong>error_dset_omit</strong></a>(self, dsetname, filename)</dt></dl>
+
+<dl><dt><a name="Frog-error_file"><strong>error_file</strong></a>(self, filename)</dt></dl>
+
+<dl><dt><a name="Frog-error_nargs"><strong>error_nargs</strong></a>(self, nargs)</dt></dl>
+
+<dl><dt><a name="Frog-error_nargs_min"><strong>error_nargs_min</strong></a>(self, nargs)</dt></dl>
+
+<dl><dt><a name="Frog-error_pairs"><strong>error_pairs</strong></a>(self)</dt></dl>
+
+<dl><dt><a name="Frog-error_shortopt"><strong>error_shortopt</strong></a>(self, shortopt)</dt></dl>
+
+<dl><dt><a name="Frog-error_stdin_len"><strong>error_stdin_len</strong></a>(self, nlines)</dt></dl>
+
+<dl><dt><a name="Frog-exec_once"><strong>exec_once</strong></a>(self, inargs, outargs, opts, func)</dt><dd><tt>Load&nbsp;and&nbsp;save&nbsp;all&nbsp;data,&nbsp;function&nbsp;has&nbsp;access&nbsp;to&nbsp;all&nbsp;the&nbsp;data&nbsp;at<br>
+once.</tt></dd></dl>
+
+<dl><dt><a name="Frog-exec_seq"><strong>exec_seq</strong></a>(self, inargs, outargs, opts, func, indep, tninargs, tnoutargs)</dt><dd><tt>Load&nbsp;and&nbsp;save&nbsp;data&nbsp;one&nbsp;by&nbsp;one,&nbsp;function&nbsp;works&nbsp;on&nbsp;each&nbsp;chunk<br>
+(argument&nbsp;or&nbsp;argument&nbsp;pair&nbsp;or&nbsp;file&nbsp;or&nbsp;file&nbsp;pair&nbsp;or&nbsp;STDIN/STDOUT&nbsp;line<br>
+separately.</tt></dd></dl>
+
+<dl><dt><a name="Frog-expand_inmap"><strong>expand_inmap</strong></a>(self, inmap, fdefaults)</dt></dl>
+
+<dl><dt><a name="Frog-expand_outmap"><strong>expand_outmap</strong></a>(self, outmap, fdefaults)</dt></dl>
+
+<dl><dt><a name="Frog-get_exec_mode"><strong>get_exec_mode</strong></a>(self, tninargs, tnoutargs, indep, parallel)</dt><dd><tt>Determine&nbsp;execution&nbsp;mode&nbsp;(sequential,&nbsp;parallel&nbsp;or&nbsp;all&nbsp;at&nbsp;once).<br>
+Returns&nbsp;"para",&nbsp;"seq"&nbsp;or&nbsp;"once".</tt></dd></dl>
+
+<dl><dt><a name="Frog-get_from_outdata"><strong>get_from_outdata</strong></a>(self, source, outdata, indata)</dt></dl>
+
+<dl><dt><a name="Frog-get_indep"><strong>get_indep</strong></a>(self, inmap, outmap)</dt><dd><tt>Determine&nbsp;independent&nbsp;mode,&nbsp;i.e.&nbsp;find&nbsp;out&nbsp;if&nbsp;function&nbsp;only&nbsp;depends<br>
+on&nbsp;maximal&nbsp;one&nbsp;input&nbsp;and&nbsp;maximal&nbsp;one&nbsp;output&nbsp;argument,&nbsp;so&nbsp;that&nbsp;it&nbsp;can&nbsp;be<br>
+applied&nbsp;independently&nbsp;(sequential&nbsp;or&nbsp;parallel)&nbsp;on&nbsp;all&nbsp;the&nbsp;arguments&nbsp;or<br>
+data&nbsp;files.</tt></dd></dl>
+
+<dl><dt><a name="Frog-get_tninargs"><strong>get_tninargs</strong></a>(self, inmap, indep)</dt></dl>
+
+<dl><dt><a name="Frog-get_tnoutargs"><strong>get_tnoutargs</strong></a>(self, outmap, tninargs, indep)</dt></dl>
+
+<dl><dt><a name="Frog-load_indata_once"><strong>load_indata_once</strong></a>(self, inargs, inmap)</dt><dd><tt>Load&nbsp;all&nbsp;input&nbsp;data&nbsp;at&nbsp;once&nbsp;(execution&nbsp;mode&nbsp;"all-at-once").</tt></dd></dl>
+
+<dl><dt><a name="Frog-load_indata_seq"><strong>load_indata_seq</strong></a>(self, inarg, inmap)</dt><dd><tt>Load&nbsp;only&nbsp;one&nbsp;chunk&nbsp;of&nbsp;data&nbsp;(belonging&nbsp;to&nbsp;one&nbsp;command&nbsp;line&nbsp;argument,<br>
+one&nbsp;input&nbsp;file,&nbsp;or&nbsp;one&nbsp;line&nbsp;of&nbsp;standard&nbsp;input)&nbsp;(execution&nbsp;mode<br>
+"sequential"&nbsp;or&nbsp;"parallel").</tt></dd></dl>
+
+<dl><dt><a name="Frog-raise_outmap_len"><strong>raise_outmap_len</strong></a>(self, noutdata)</dt></dl>
+
+<dl><dt><a name="Frog-read_stdin_line"><strong>read_stdin_line</strong></a>(self)</dt></dl>
+
+<dl><dt><a name="Frog-save_dset"><strong>save_dset</strong></a>(self, filename, dsetname, data, overwrite<font color="#909090">=None</font>, mode<font color="#909090">='a'</font>)</dt><dd><tt>Save&nbsp;dataset&nbsp;to&nbsp;file.&nbsp;Overwrite&nbsp;if&nbsp;self.<strong>overwrite</strong>&nbsp;is&nbsp;True,&nbsp;never<br>
+overwrite&nbsp;if&nbsp;self.<strong>overwrite</strong>&nbsp;is&nbsp;False,&nbsp;and&nbsp;if&nbsp;it&nbsp;is&nbsp;None,&nbsp;prompt&nbsp;the<br>
+user&nbsp;to&nbsp;decide.</tt></dd></dl>
+
+<dl><dt><a name="Frog-save_outdata_once"><strong>save_outdata_once</strong></a>(self, outargs, outmap, outdata, inargs, indata)</dt><dd><tt>Save&nbsp;all&nbsp;output&nbsp;data&nbsp;at&nbsp;once&nbsp;(execution&nbsp;mode&nbsp;"all-at-once").</tt></dd></dl>
+
+<dl><dt><a name="Frog-save_outdata_seq"><strong>save_outdata_seq</strong></a>(self, outarg, outmap, outdata, inarg, indata)</dt><dd><tt>Save&nbsp;a&nbsp;single&nbsp;chunk&nbsp;of&nbsp;output&nbsp;data&nbsp;(belonging&nbsp;to&nbsp;at&nbsp;most&nbsp;one<br>
+output&nbsp;file&nbsp;or&nbsp;one&nbsp;line&nbsp;of&nbsp;standard&nbsp;output)&nbsp;(execution&nbsp;mode<br>
+"sequential"&nbsp;or&nbsp;"parallel").</tt></dd></dl>
+
+<dl><dt><a name="Frog-split_indata"><strong>split_indata</strong></a>(self, indata)</dt><dd><tt>Convert&nbsp;input&nbsp;data&nbsp;(already&nbsp;preprocessed)&nbsp;into&nbsp;a&nbsp;variable&nbsp;list&nbsp;of<br>
+arguments&nbsp;(inargs)&nbsp;and&nbsp;a&nbsp;dictionary&nbsp;of&nbsp;keyword&nbsp;arguments&nbsp;(inkwargs),<br>
+ready&nbsp;to&nbsp;be&nbsp;passed&nbsp;to&nbsp;the&nbsp;function.</tt></dd></dl>
+
+<dl><dt><a name="Frog-update_inmap"><strong>update_inmap</strong></a>(self, inmap)</dt></dl>
+
+<dl><dt><a name="Frog-update_outmap"><strong>update_outmap</strong></a>(self, outmap)</dt><dd><tt>Update&nbsp;output&nbsp;mapping&nbsp;with&nbsp;user-defined&nbsp;content&nbsp;from&nbsp;the&nbsp;--outmap<br>
+command&nbsp;line&nbsp;option.</tt></dd></dl>
+
+<hr>
+Static methods defined here:<br>
+<dl><dt><a name="Frog-any_startswith"><strong>any_startswith</strong></a>(objects, string)</dt><dd><tt>Return&nbsp;true&nbsp;if&nbsp;any&nbsp;of&nbsp;the&nbsp;given&nbsp;objects&nbsp;starts&nbsp;with&nbsp;the&nbsp;given<br>
+string.&nbsp;Non-strings&nbsp;among&nbsp;the&nbsp;objects&nbsp;are&nbsp;ignored.</tt></dd></dl>
+
+<dl><dt><a name="Frog-get_argind"><strong>get_argind</strong></a>(mapping, symbol<font color="#909090">='$'</font>)</dt><dd><tt>Extract&nbsp;the&nbsp;argument&nbsp;index&nbsp;from&nbsp;a&nbsp;mapping,&nbsp;i.e.&nbsp;the&nbsp;number&nbsp;in&nbsp;"$1"<br>
+or&nbsp;"$2/any_dataset".&nbsp;Return&nbsp;None&nbsp;if&nbsp;mapping&nbsp;is&nbsp;not&nbsp;string,&nbsp;or&nbsp;doesn't<br>
+start&nbsp;with&nbsp;"$",&nbsp;or&nbsp;starts&nbsp;with&nbsp;"$@".&nbsp;Instead&nbsp;of&nbsp;"$",&nbsp;another&nbsp;symbol&nbsp;can<br>
+be&nbsp;chosen.</tt></dd></dl>
+
+<dl><dt><a name="Frog-in_any"><strong>in_any</strong></a>(obj, iterable)</dt></dl>
+
+<dl><dt><a name="Frog-is_even"><strong>is_even</strong></a>(number)</dt></dl>
+
+<dl><dt><a name="Frog-plural"><strong>plural</strong></a>(number)</dt></dl>
+
+<dl><dt><a name="Frog-raise_argind"><strong>raise_argind</strong></a>(mapping)</dt></dl>
+
+<dl><dt><a name="Frog-raise_exec_mode"><strong>raise_exec_mode</strong></a>()</dt></dl>
+
+<dl><dt><a name="Frog-raise_indep"><strong>raise_indep</strong></a>()</dt></dl>
+
+<dl><dt><a name="Frog-raise_inmap"><strong>raise_inmap</strong></a>(mapping)</dt></dl>
+
+<dl><dt><a name="Frog-raise_outdata"><strong>raise_outdata</strong></a>(outlen)</dt></dl>
+
+<dl><dt><a name="Frog-raise_outdata_iterable"><strong>raise_outdata_iterable</strong></a>(mapping)</dt></dl>
+
+<dl><dt><a name="Frog-raise_outdata_len"><strong>raise_outdata_len</strong></a>(nexpected)</dt></dl>
+
+<dl><dt><a name="Frog-raise_outmap"><strong>raise_outmap</strong></a>(mapping)</dt></dl>
+
+<dl><dt><a name="Frog-raise_parallel"><strong>raise_parallel</strong></a>()</dt></dl>
+
+<dl><dt><a name="Frog-raise_percent_in_inmap"><strong>raise_percent_in_inmap</strong></a>(mapping)</dt></dl>
+
+<dl><dt><a name="Frog-raise_postproc_iter"><strong>raise_postproc_iter</strong></a>()</dt></dl>
+
+<dl><dt><a name="Frog-raise_postproc_len"><strong>raise_postproc_len</strong></a>(outlen)</dt></dl>
+
+<dl><dt><a name="Frog-raise_preproc"><strong>raise_preproc</strong></a>()</dt></dl>
+
+<dl><dt><a name="Frog-raise_reqarg_not_in_inmap"><strong>raise_reqarg_not_in_inmap</strong></a>(reqarg)</dt></dl>
+
+<dl><dt><a name="Frog-raise_stdin_structure"><strong>raise_stdin_structure</strong></a>()</dt></dl>
+
+<dl><dt><a name="Frog-raise_stdout_structure"><strong>raise_stdout_structure</strong></a>()</dt></dl>
+
+<dl><dt><a name="Frog-startswith_one_of"><strong>startswith_one_of</strong></a>(string, chars)</dt></dl>
+
+<hr>
+Data descriptors defined here:<br>
+<dl><dt><strong>__dict__</strong></dt>
+<dd><tt>dictionary&nbsp;for&nbsp;instance&nbsp;variables&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+<dl><dt><strong>__weakref__</strong></dt>
+<dd><tt>list&nbsp;of&nbsp;weak&nbsp;references&nbsp;to&nbsp;the&nbsp;object&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+</td></tr></table> <p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#ffc8d8">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#000000" face="helvetica, arial"><a name="apply_all">class <strong>apply_all</strong></a>(<a href="__builtin__.html#object">__builtin__.object</a>)</font></td></tr>
+    
+<tr bgcolor="#ffc8d8"><td rowspan=2><tt>&nbsp;&nbsp;&nbsp;</tt></td>
+<td colspan=2><tt>Instances&nbsp;of&nbsp;this&nbsp;class&nbsp;are&nbsp;callables&nbsp;which&nbsp;apply&nbsp;a&nbsp;list&nbsp;of&nbsp;functions&nbsp;to<br>
+the&nbsp;given&nbsp;<a href="__builtin__.html#object">object</a>.<br>&nbsp;</tt></td></tr>
+<tr><td>&nbsp;</td>
+<td width="100%">Methods defined here:<br>
+<dl><dt><a name="apply_all-__call__"><strong>__call__</strong></a>(self, obj)</dt></dl>
+
+<dl><dt><a name="apply_all-__init__"><strong>__init__</strong></a>(self, *funcs)</dt></dl>
+
+<hr>
+Data descriptors defined here:<br>
+<dl><dt><strong>__dict__</strong></dt>
+<dd><tt>dictionary&nbsp;for&nbsp;instance&nbsp;variables&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+<dl><dt><strong>__weakref__</strong></dt>
+<dd><tt>list&nbsp;of&nbsp;weak&nbsp;references&nbsp;to&nbsp;the&nbsp;object&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+</td></tr></table> <p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#ffc8d8">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#000000" face="helvetica, arial"><a name="expressions_of">class <strong>expressions_of</strong></a>(<a href="__builtin__.html#object">__builtin__.object</a>)</font></td></tr>
+    
+<tr bgcolor="#ffc8d8"><td rowspan=2><tt>&nbsp;&nbsp;&nbsp;</tt></td>
+<td colspan=2><tt>Instances&nbsp;of&nbsp;this&nbsp;class&nbsp;are&nbsp;callables&nbsp;which&nbsp;evaluate&nbsp;a&nbsp;certain<br>
+expression&nbsp;for&nbsp;each&nbsp;element&nbsp;of&nbsp;a&nbsp;given&nbsp;iterable,&nbsp;and&nbsp;returns&nbsp;the&nbsp;results&nbsp;as<br>
+in&nbsp;form&nbsp;of&nbsp;a&nbsp;new&nbsp;iterable.&nbsp;In&nbsp;the&nbsp;expression,&nbsp;"x"&nbsp;indicates&nbsp;the&nbsp;respective<br>
+item.<br>&nbsp;</tt></td></tr>
+<tr><td>&nbsp;</td>
+<td width="100%">Methods defined here:<br>
+<dl><dt><a name="expressions_of-__call__"><strong>__call__</strong></a>(self, iterable)</dt></dl>
+
+<dl><dt><a name="expressions_of-__init__"><strong>__init__</strong></a>(self, expr<font color="#909090">='x'</font>, dtype<font color="#909090">=None</font>)</dt></dl>
+
+<hr>
+Data descriptors defined here:<br>
+<dl><dt><strong>__dict__</strong></dt>
+<dd><tt>dictionary&nbsp;for&nbsp;instance&nbsp;variables&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+<dl><dt><strong>__weakref__</strong></dt>
+<dd><tt>list&nbsp;of&nbsp;weak&nbsp;references&nbsp;to&nbsp;the&nbsp;object&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+</td></tr></table> <p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#ffc8d8">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#000000" face="helvetica, arial"><a name="items_of">class <strong>items_of</strong></a>(<a href="__builtin__.html#object">__builtin__.object</a>)</font></td></tr>
+    
+<tr bgcolor="#ffc8d8"><td rowspan=2><tt>&nbsp;&nbsp;&nbsp;</tt></td>
+<td colspan=2><tt>Instances&nbsp;of&nbsp;this&nbsp;class&nbsp;are&nbsp;callables&nbsp;which&nbsp;get&nbsp;a&nbsp;certain&nbsp;item&nbsp;of&nbsp;each<br>
+element&nbsp;of&nbsp;a&nbsp;given&nbsp;iterable,&nbsp;and&nbsp;returns&nbsp;all&nbsp;items&nbsp;in&nbsp;form&nbsp;of&nbsp;a&nbsp;new<br>
+iterable.&nbsp;If&nbsp;item&nbsp;does&nbsp;not&nbsp;exist&nbsp;and&nbsp;a&nbsp;default&nbsp;value&nbsp;is&nbsp;given,&nbsp;return&nbsp;that<br>
+value.<br>&nbsp;</tt></td></tr>
+<tr><td>&nbsp;</td>
+<td width="100%">Methods defined here:<br>
+<dl><dt><a name="items_of-__call__"><strong>__call__</strong></a>(self, iterable)</dt></dl>
+
+<dl><dt><a name="items_of-__init__"><strong>__init__</strong></a>(self, itemname, default<font color="#909090">=None</font>, dtype<font color="#909090">=None</font>)</dt></dl>
+
+<hr>
+Data descriptors defined here:<br>
+<dl><dt><strong>__dict__</strong></dt>
+<dd><tt>dictionary&nbsp;for&nbsp;instance&nbsp;variables&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+<dl><dt><strong>__weakref__</strong></dt>
+<dd><tt>list&nbsp;of&nbsp;weak&nbsp;references&nbsp;to&nbsp;the&nbsp;object&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+</td></tr></table> <p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#ffc8d8">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#000000" face="helvetica, arial"><a name="list_of">class <strong>list_of</strong></a>(<a href="__builtin__.html#object">__builtin__.object</a>)</font></td></tr>
+    
+<tr bgcolor="#ffc8d8"><td rowspan=2><tt>&nbsp;&nbsp;&nbsp;</tt></td>
+<td colspan=2><tt>Instances&nbsp;of&nbsp;this&nbsp;class&nbsp;are&nbsp;callables&nbsp;which&nbsp;turn&nbsp;a&nbsp;given&nbsp;iterable&nbsp;into<br>
+a&nbsp;list&nbsp;of&nbsp;items&nbsp;with&nbsp;the&nbsp;specified&nbsp;data&nbsp;type.<br>&nbsp;</tt></td></tr>
+<tr><td>&nbsp;</td>
+<td width="100%">Methods defined here:<br>
+<dl><dt><a name="list_of-__call__"><strong>__call__</strong></a>(self, iterable)</dt></dl>
+
+<dl><dt><a name="list_of-__init__"><strong>__init__</strong></a>(self, dtype)</dt></dl>
+
+<hr>
+Data descriptors defined here:<br>
+<dl><dt><strong>__dict__</strong></dt>
+<dd><tt>dictionary&nbsp;for&nbsp;instance&nbsp;variables&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+<dl><dt><strong>__weakref__</strong></dt>
+<dd><tt>list&nbsp;of&nbsp;weak&nbsp;references&nbsp;to&nbsp;the&nbsp;object&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+</td></tr></table> <p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#ffc8d8">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#000000" face="helvetica, arial"><a name="tuple_of">class <strong>tuple_of</strong></a>(<a href="__builtin__.html#object">__builtin__.object</a>)</font></td></tr>
+    
+<tr bgcolor="#ffc8d8"><td rowspan=2><tt>&nbsp;&nbsp;&nbsp;</tt></td>
+<td colspan=2><tt>Instances&nbsp;of&nbsp;this&nbsp;class&nbsp;are&nbsp;callables&nbsp;which&nbsp;turn&nbsp;a&nbsp;given&nbsp;iterable&nbsp;into<br>
+a&nbsp;tuple&nbsp;of&nbsp;items&nbsp;with&nbsp;the&nbsp;specified&nbsp;data&nbsp;type.<br>&nbsp;</tt></td></tr>
+<tr><td>&nbsp;</td>
+<td width="100%">Methods defined here:<br>
+<dl><dt><a name="tuple_of-__call__"><strong>__call__</strong></a>(self, iterable)</dt></dl>
+
+<dl><dt><a name="tuple_of-__init__"><strong>__init__</strong></a>(self, dtype)</dt></dl>
+
+<hr>
+Data descriptors defined here:<br>
+<dl><dt><strong>__dict__</strong></dt>
+<dd><tt>dictionary&nbsp;for&nbsp;instance&nbsp;variables&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+<dl><dt><strong>__weakref__</strong></dt>
+<dd><tt>list&nbsp;of&nbsp;weak&nbsp;references&nbsp;to&nbsp;the&nbsp;object&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+</td></tr></table></td></tr></table><p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#eeaa77">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Functions</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#eeaa77"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><dl><dt><a name="-eval_if_str"><strong>eval_if_str</strong></a>(obj)</dt><dd><tt>Evaluate&nbsp;given&nbsp;expression&nbsp;only&nbsp;if&nbsp;string&nbsp;is&nbsp;given,&nbsp;otherwise,&nbsp;leave&nbsp;the<br>
+given&nbsp;<a href="__builtin__.html#object">object</a>&nbsp;unchanged.</tt></dd></dl>
+ <dl><dt><a name="-frogexec"><strong>frogexec</strong></a>(frog, name<font color="#909090">=None</font>, dir<font color="#909090">='.'</font>)</dt><dd><tt>Create&nbsp;a&nbsp;small&nbsp;executable&nbsp;script&nbsp;that&nbsp;calls&nbsp;the&nbsp;specified&nbsp;frog&nbsp;wrapper.<br>
+Expect&nbsp;either&nbsp;the&nbsp;function&nbsp;<a href="__builtin__.html#object">object</a>&nbsp;of&nbsp;the&nbsp;frog&nbsp;wrapper&nbsp;itself,&nbsp;or&nbsp;a&nbsp;string<br>
+containing&nbsp;the&nbsp;full&nbsp;module&nbsp;path&nbsp;to&nbsp;the&nbsp;frog&nbsp;wrapper.<br>
+&nbsp;<br>
+The&nbsp;executable&nbsp;script&nbsp;is&nbsp;created&nbsp;in&nbsp;the&nbsp;directory&nbsp;"dir".&nbsp;Default&nbsp;is&nbsp;the<br>
+current&nbsp;working&nbsp;directory.&nbsp;The&nbsp;script&nbsp;will&nbsp;be&nbsp;named&nbsp;according&nbsp;to&nbsp;"name",<br>
+otherwise&nbsp;it&nbsp;will&nbsp;be&nbsp;based&nbsp;on&nbsp;the&nbsp;name&nbsp;of&nbsp;the&nbsp;function&nbsp;<a href="__builtin__.html#object">object</a>&nbsp;of&nbsp;the&nbsp;frog<br>
+wrapper.<br>
+&nbsp;<br>
+An&nbsp;attempt&nbsp;to&nbsp;make&nbsp;the&nbsp;script&nbsp;executable&nbsp;is&nbsp;made,&nbsp;using&nbsp;"chmod&nbsp;+x".</tt></dd></dl>
+ <dl><dt><a name="-froglist"><strong>froglist</strong></a>(module)</dt><dd><tt>List&nbsp;all&nbsp;frogs&nbsp;defined&nbsp;in&nbsp;a&nbsp;certain&nbsp;module.&nbsp;The&nbsp;module&nbsp;can&nbsp;be&nbsp;a&nbsp;string<br>
+(module&nbsp;path)&nbsp;or&nbsp;the&nbsp;module&nbsp;<a href="__builtin__.html#object">object</a>&nbsp;itself.</tt></dd></dl>
+ <dl><dt><a name="-isfrog"><strong>isfrog</strong></a>(func)</dt><dd><tt>Check&nbsp;if&nbsp;given&nbsp;function&nbsp;<a href="__builtin__.html#object">object</a>&nbsp;is&nbsp;that&nbsp;of&nbsp;a&nbsp;frog&nbsp;wrapper.</tt></dd></dl>
+ <dl><dt><a name="-print_timings"><strong>print_timings</strong></a>(timings)</dt></dl>
+ <dl><dt><a name="-sentence"><strong>sentence</strong></a>(iterable)</dt><dd><tt>Convert&nbsp;all&nbsp;items&nbsp;of&nbsp;the&nbsp;iterable&nbsp;to&nbsp;strings&nbsp;and&nbsp;join&nbsp;them&nbsp;with&nbsp;space<br>
+characters&nbsp;in&nbsp;between.&nbsp;Return&nbsp;the&nbsp;newly&nbsp;formed&nbsp;string.</tt></dd></dl>
+</td></tr></table><p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#55aa55">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Data</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#55aa55"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><strong>__created__</strong> = '2013-06-28'<br>
+<strong>__modified__</strong> = '2014-02-07'<br>
+<strong>__version__</strong> = '0.3'</td></tr></table>
+</body></html>

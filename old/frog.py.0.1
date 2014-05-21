@@ -1,0 +1,969 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""Make programs out of your Python functions that can be run from the
+command line by simply adding a decorator in front of the function. The
+programs will have a commandline interface based on the optparse module,
+and load data from and save data to files (HDF5 format).
+
+The module name "frog" is meant to be a silly shortcut for
+"function program".
+
+Simple example:
+
+> # file "my_module.py"
+> from frog import Frog
+> @Frog(outfiles=1)
+> def mean(x):
+>   return sum(x)/len(x)
+
+Now, you can create a small executable script with the following content:
+> import sys, my_module
+> sys.exit(my_module._mean())
+
+The way the frog is configured in this example, it expects you to specify
+a bunch of HDF5 data files, where each file has a dataset called "x", and
+the function will be called with the list [x1, x2, x3, ...]
+(length == number of files). By default, the result of the function goes to
+STDOUT (displayed on the screen). However, the behavior can be configured in
+various ways and of course strongly depends on the user's requirements.
+For example, if in each file there is a whole array "x" from which the mean
+should be displayed, and this should be done for each specified file
+independently, just use the decorator "@Frog()".
+
+To do:
+--> add option "--time" (get information about execution times, CPU/wall
+    times, for loading, executing and saving the data) - make available for
+    output, just like DATE and FILENAME/@
+--> enable parallel execution if "indep" is True, option "--parallel"
+--> if parallel execution implemented, add option "--ncores"
+--> option "--cmd" to save command line to a text file?
+--> warn about usage with interactively defined functions
+--> in outnames, let "FILENAME" (or @) access the filename (if indep is True)
+    (and print it to STDOUT) (do something similar for current time "DATE")
+--> check if progress bar can be shown, otherwise error (if STDOUT etc.)
+--> add more frog configuration options (to overwrite default values), e.g.
+    to modify the "innames" mapping, or to select additional STDOUT values
+--> write a function to conveniently create executable scripts (use frog?)
+--> write a function to list all frogs defined in some given module (frog?)
+--> convert exceptions raised in func to short error messages?
+--> understand patterns in both file and dset paths (and combined paths):
+    @Frog(informat='HDF5FILES') # like HDF5, load innames...
+    @Frog(informat='HDF5DSETS') # like ARGS, load strings, combined dset paths
+    @Frog(informat='HDF5FILEDSETS') # like ARGS, load strings, dset patterns
+                                    # of single files
+--> returning exit status is too complicated, make it more simple
+--> the most general case is still to do
+    kwargs isn't supported at all at the moment, args just in one special
+    case
+    >>> @Frog(informat='ARGS', preproc=dict(a=int, b=int))
+    >>> def func(a, b, c=1, d=2, *args, **kwargs):
+    >>>   return a, b, c, d, args, kwargs
+"""
+__created__  = '2013-06-28'
+__modified__ = '2013-07-13'
+__version__  = '0.1'
+import inspect, itertools, os, sys, time
+import h5obj, h5obj.tools, progress
+
+try: import optparse2 as optparse
+except ImportError: import optparse
+
+
+
+
+class Frog(object):
+  __created__ = '2013-06-30'
+  __modified__ = '2013-07-13'
+
+  def __init__(self, infiles=None, outfiles=None,
+               indep=None, parallel=False,
+               informat=None, outformat=None,
+               innames=None, outnames=None, intypes=None, wrapname='',
+               optdoc=None, prolog='', epilog='', usage='', version='',
+               shortopts=None, longopts=None, overwrite=True, bar=False,
+               preproc=None, postproc=None, sep=','):
+    """Initialize and configure frog decorator."""
+
+    if prolog and prolog.strip()[-1] != '\n': prolog += '\n'
+    try: prog = sys.argv[0].rsplit('/', 1)[1]
+    except: prog = ''
+    if not usage: usage = '%prog [options]'
+      
+    # store configuration
+    self.infiles   = infiles if infiles is not None else 'inf'
+    self.informat  = informat or 'HDF5'
+    self.innames   = innames or dict()
+    self.outfiles  = outfiles if outfiles is not None \
+                              else ('same' if informat == 'HDF5' else 'inf')
+    self.outformat = 'HDF5' if outnames else 'STDOUT'
+    self.outnames  = outnames
+    self.indep     = indep if indep is not None \
+                           else infiles == outfiles or outfiles == 'same' \
+                                or outfiles == 0 or infiles == 0
+    self.parallel  = parallel
+    self.intypes   = intypes or dict()
+    self.optdoc    = optdoc or dict() # documentation for keyword arguments
+    self.prolog    = prolog    # text shown in help in front of documentation
+    self.epilog    = epilog    # text shown in help after option list
+    self.usage     = usage     # usage, e.g. prog [filenames ...] [-s]
+    self.shortopts = shortopts or dict() # short option name, e.g. "-v"
+    self.longopts  = longopts or dict() # long option name, e.g. "--verbose"
+    self.wrapname  = wrapname  # choose custom name for the wrapper function
+    self.prog      = prog      # name of the executable script
+    self.version   = version or ' '
+    self.overwrite = overwrite # overwrite existing datasets
+    self.bar       = bar       # show progress bar
+    self.preproc   = preproc or dict()
+    self.postproc  = postproc or self.dummy
+    self.sep       = sep   # character to separate values in STDIN and ARGS
+                   
+  def __call__(self, func):
+    """When the decorator is applied to the user's function, this method is
+    called with the function object. It will not touch the function object
+    itself and return it in the end. But an additional wrapper function will
+    be created in the same module which has the same name as the user's
+    function but with a leading underscore. Further more, the wrapper
+    function will have the attribute "__frog__" which is set to True. In this
+    way, it may be checked which of the functions defined in a module are
+    frog wrappers. The executable script is supposed to call that wrapper
+    function, i.e. using "sys.exit(my_module._my_wrapper())"."""
+    
+    # inspect function
+    fmodule  = inspect.getmodule(func)
+    fname    = func.__name__
+    fdoc     = func.__doc__ or ''
+    mname    = fmodule.__name__
+    fdoc = '\n'.join([s.strip() for s in fdoc.split('\n')])
+    #fversion = getattr(self, 'version') \
+               #or time.ctime(os.path.getmtime(fmodule.__file__))
+    self.fargnames, self.fvarargsname, self.fvarkwname, defaults \
+    = inspect.getargspec(func)
+    defaults = list(defaults) if defaults is not None else []
+    
+    # track defaults in a dictionary
+    self.fdefaults = {}
+    for argname, default in zip(self.fargnames[::-1], defaults[::-1]):
+      self.fdefaults[argname] = default
+
+    # determine which arguments are required, because they don't have a
+    # default value. ## redundant information? solely for convenience?
+    self.frequired = []
+    for argname in self.fargnames:
+      if argname not in self.fdefaults:
+        self.frequired.append(argname)
+
+    # special modes, regarding variable arguments and variable keywords
+    if self.informat in ('ARGS', 'DSETS', 'FILEDSETS', 'STDIN') \
+    and self.fvarargsname and len(self.frequired) > 0:
+      print >>sys.stderr, '%s: using variable argument list ' % self.prog+\
+                          'together with other required arguments is not '+\
+                          'supported'
+      sys.exit(1)
+    if self.informat in ('ARGS', 'DSETS', 'FILEDSETS', 'STDIN') \
+    and len(self.frequired) == 0 and self.fvarargsname \
+    and self.indep == False:
+      self.frequired.append(self.fvarargsname)
+
+    # automatically add required function arguments
+    for fargname in self.fargnames:
+      if fargname not in self.fdefaults and fargname not in self.innames:
+        self.innames[fargname] = fargname
+
+    # determine name of the wrapper function
+    wrapname = self.wrapname or '_'+fname
+    
+    class Wrapper(object):
+      __frog__ = True
+      
+      def __call__(wself):
+        """The executable script associated with the function is supposed to
+        call this function. It is not expecting any arguments (the command
+        line arguments will be obtained later) and is returning the exit
+        status."""
+        
+        # define command line interface
+        op = optparse.OptionParser(usage=self.usage, epilog=self.epilog,
+                                  description=self.prolog+fdoc,
+                                  prog=self.prog, version=self.version)
+
+        # define general frog options
+        og = optparse.OptionGroup(op, 'Frog configuration')
+        og.add_option('--info', default=False, action='store_true',
+                      help='show frog information and exit')
+        og.add_option('--info-indata', default=False, action='store_true',
+                      help='show indata and exit')
+        og.add_option('--info-predata', default=False, action='store_true',
+                      help='show predata and exit')
+        og.add_option('--info-inkwargs', default=False, action='store_true',
+                      help='show inkwargs and exit')
+        og.add_option('--info-inargs', default=False, action='store_true',
+                      help='show inargs and exit')
+        og.add_option('--info-fdefaults', default=False, action='store_true',
+                      help='show function default arguments and exit')
+        og.add_option('--bar', default=False, action='store_true',
+                      help='show progress bar')
+        og.add_option('--no-bar', default=False, action='store_true',
+                      help='do not show progress bar')
+        og.add_option('--overwrite', default=False, action='store_true',
+                      help='overwrite existing datasets')
+        og.add_option('--no-overwrite', default=False, action='store_true',
+                      help='do not overwrite existing datasets')
+        og.add_option('--parallel', default=False, action='store_true',
+                      help='run parallel threads')
+        og.add_option('--no-parallel', default=False, action='store_true',
+                      help='do not run parallel threads')
+        op.add_option_group(og)
+        
+        self.optnames = []
+        for argname, default in self.fdefaults.iteritems():
+          if argname in self.innames: continue
+          
+          shortopt = '-'+str(self.shortopts.get(argname, argname[0]))
+          if len(shortopt[1:]) != 1: return self.error_shortopt(shortopt)
+          longopt  = '--'+str(self.longopts.get(argname, argname))
+          defaulttype = type(default) if default is not None else float
+          opttype = self.intypes.get(argname, defaulttype)
+          if opttype in (list, tuple): opttype = str
+          opttypename = getattr(opttype, '__name__', '???')
+          if opttype is bool:
+            action = 'store_false' if default else 'store_true'
+            opttype = None
+          else:
+            action = None
+          opthelp = self.optdoc.get(argname,
+                                    'keyword argument "%s", type %s' \
+                                    % (argname, opttypename))
+          op.add_option(shortopt, longopt, type=opttype, default=default,
+                        action=action, help=opthelp, dest=argname)
+
+          self.optnames.append(argname)
+
+        # parse command line
+        self.opts, args = op.parse_args()
+
+        # interprete frog options
+        if self.opts.overwrite:    self.overwrite = True
+        if self.opts.no_overwrite: self.overwrite = False
+        if self.opts.bar:    self.bar = True
+        if self.opts.no_bar: self.bar = False
+        if self.opts.parallel:    self.parallel = True
+        if self.opts.no_parallel: self.parallel = False
+
+        # show frog information and exit
+        if self.opts.info:
+          print '%s.%s' % (mname, wrapname),
+          print '%s.%s' % (mname, fname),
+          print '%s>%s' % (self.informat, self.outformat),
+          print '%s>%s' % (self.infiles, self.outfiles),
+          print 'para' if self.parallel \
+                       else ('indep' if self.indep else 'dep')
+          return 0
+        if self.opts.info_fdefaults:
+          return self.display_keywords(self.fdefaults)
+
+        # check configuration
+        if isinstance(self.infiles, basestring):
+          if not self.infiles == 'inf': self.raise_infiles()
+        else:
+          try: self.infiles = int(self.infiles)
+          except: self.raise_infiles()
+          if self.infiles < 0: self.raise_infiles()
+
+        if isinstance(self.outfiles, basestring):
+          if not self.outfiles in ('inf', 'same'): self.raise_outfiles()
+        else:
+          try: self.outfiles = int(self.outfiles)
+          except: self.raise_outfiles()
+          if self.outfiles < 0: self.raise_outfiles()
+
+        if not self.informat in ('HDF5', 'STDIN', 'ARGS', 'DSETS',
+                                 'FILEDSETS'):
+          self.raise_informat()
+        if not self.outformat in ('HDF5', 'STDOUT'):
+          self.raise_outformat()
+
+        if self.informat in ('STDIN', 'ARGS', 'DSETS', 'FILEDSETS') \
+        and self.outfiles == 'same':
+          self.raise_outfiles_same()
+
+        if self.indep and self.outfiles != self.infiles \
+        and self.infiles > 0 and self.outfiles > 0:
+          self.raise_indep()
+
+        # determine execution mode
+        exec_mode = self.get_exec_mode()
+
+        # divide argument list (input/output files)
+        out = self.divide_args(args)
+        if hasattr(out, '__iter__'):
+          inargs, outargs = out
+        else:
+          # error occured, return with exit code
+          return out
+
+        # expand input arguments if informat is DSETS or FILEDSETS
+        if self.informat == 'DSETS':
+          inargs = self.expand_fdpatterns(inargs)
+        elif self.informat == 'FILEDSETS':
+          inargs = self.expand_fdpatterns_filewise(inargs)
+        
+        # execute
+        if exec_mode == 'once':
+          exit_status = self.exec_once(inargs, outargs, self.opts, func)
+        elif exec_mode == 'seq':
+          # extra case if self.outfiles is 'same'?
+          exit_status = self.exec_seq(inargs, outargs, self.opts, func)
+        elif exec_mode == 'para':
+          raise NotImplementedError, 'parallel execution not implemented'
+        else:
+          self.raise_exec_mode()
+        return exit_status
+
+      def __repr__(wself):
+        return '<frog wrapper for %s.%s>' % (fmodule.__name__, fname)
+      
+    # put frog into module
+    wrapper = Wrapper()
+    wrapper.__doc__ = self.prolog+'\n'+(func.__doc__ or '')
+    if hasattr(fmodule, wrapname):
+      if self.wrapname: self.raise_wrapname_exists(wrapname)
+      num = 2
+      while hasattr(fmodule, wrapname+str(num)): num += 1
+      wrapname += str(num)        
+    setattr(fmodule, wrapname, wrapper)
+    return func # return original function, untouched
+
+
+  def expand_fdpatterns(self, inargs):
+    expanded_patterns = []
+    for pattern in inargs:
+      expanded_patterns += h5obj.tools.h5glob(pattern)
+    return expanded_patterns
+
+
+  def expand_fdpatterns_filewise(self, inargs):
+    expanded_patterns = []
+    for pattern in inargs:
+      expanded_patterns += h5obj.tools.h5glob_filewise(pattern)
+    return expanded_patterns
+
+    
+  def exec_once(self, inargs, outargs, opts, func):
+    # load and save all data, function has access to all data at once
+    indata = self.fdefaults.copy()
+    loaded = self.load_indata_once(inargs)
+    if type(loaded) is not dict: return loaded # error, return with exit code
+    indata.update(loaded)
+    optvalues = dict((optname, getattr(opts, optname)) \
+                     for optname in self.optnames)
+    indata.update(optvalues)
+    if self.fvarargsname and self.fvarargsname not in indata:
+      indata[self.fvarargsname] = []
+    if self.fvarkwname and self.fvarkwname not in indata:
+      indata[self.fvarkwname] = {}
+    if self.opts.info_indata: return self.display_keywords(indata)
+
+    predata = self.apply_preproc(indata)
+    if self.opts.info_predata: return self.display_keywords(predata)
+
+    inargs, inkwargs = self.split_predata(predata)
+    if self.opts.info_inkwargs: return self.display_keywords(inkwargs)
+    if self.opts.info_inargs: return self.display_list(inargs)
+    
+    outdata = func(*inargs, **inkwargs)
+    postdata = self.apply_postproc(outdata)
+    return self.save_outdata_once(outargs, postdata)
+
+
+  def exec_seq(self, inargs, outargs, opts, func):
+    # load and save data one by one, function works on each chunk separately
+    self.stop_stdin = False
+    nloop = self.infiles \
+            if self.informat == 'STDIN' and self.infiles != 'inf' else 0
+    with progress.Bar(max(len(inargs), nloop), verbose=self.bar) as bar:
+      i = 0
+      #for inarg, outarg, i in itertools.izip_longest(inargs, outargs,
+      #                                               xrange(nloop)):
+      while nloop and i < nloop \
+      or self.informat == 'STDIN' and self.infiles == 'inf' \
+      or i < len(inargs) or i < len(outargs):
+        inarg  = inargs[i]  if i < len(inargs)  else None
+        outarg = outargs[i] if i < len(outargs) else None
+
+        # load, input
+        indata = self.fdefaults.copy()
+        loaded = self.load_indata_seq(inarg)
+        if type(loaded) is not dict: return loaded # error, return exit code
+        if self.infiles == 'inf' and self.stop_stdin:
+          bar.end()
+          break
+        indata.update(loaded)
+        optvalues = dict((optname, getattr(opts, optname)) \
+                        for optname in self.optnames)
+        indata.update(optvalues)
+        if self.fvarargsname and self.fvarargsname not in indata:
+          indata[self.fvarargsname] = []
+        if self.fvarkwname and self.fvarkwname not in indata:
+          indata[self.fvarkwname] = {}
+        if self.opts.info_indata: return self.display_keywords(indata)
+
+        predata = self.apply_preproc(indata)
+        if self.opts.info_predata: return self.display_keywords(predata)
+        
+        innormargs, inkwargs = self.split_predata(predata)
+        if self.opts.info_inkwargs: return self.display_keywords(inkwargs)
+        if self.opts.info_inargs: return self.display_list(innormargs)
+
+        outdata = func(*innormargs, **inkwargs)
+        postdata = self.apply_postproc(outdata)
+
+        # save, output
+        ex = self.save_outdata_seq(outarg, postdata)
+        if ex:
+          bar.end()
+          return ex
+        bar.step()
+        i += 1
+    return 0
+
+
+  def display_keywords(self, dictionary):
+    for key, value in dictionary.iteritems():
+      print key, value, type(value)
+    return 0
+
+
+  def display_list(self, iterable):
+    print ', '.join([str(i) for i in iterable])
+    return 0
+
+
+  def split_predata(self, predata):
+    # get inargs
+    inargs = []
+    for argname in self.fargnames:
+      inargs.append(predata.pop(argname))
+    inargs += predata.pop(self.fvarargsname, [])
+
+    # get inkwargs
+    inkwargs = predata.pop(self.fvarkwname, {})
+    for argname in self.fargnames:
+      if argname in inkwargs: del inkwargs[argname]
+    inkwargs.update(predata) # put all the remaining arguments in there
+
+    #for argname in inkwargs:
+      #if argname not in self.fargnames:
+        #del inkwargs[argname]
+
+    return inargs, inkwargs
+
+
+  def apply_preproc(self, indata):
+    if self.preproc is None: return indata
+    if not isinstance(self.preproc, dict): self.raise_preproc() 
+    for name, prep in self.preproc.iteritems():
+      if prep is not None and name in indata: # if None, del indata[name]?
+        indata[name] = prep(indata[name])
+    return indata
+
+        
+  def apply_postproc(self, outdata):
+    if hasattr(self.postproc, '__iter__') \
+    and not type(self.postproc) is type:
+      # if outdata is scalar, also postprocessor must be scalar
+      if not hasattr(outdata, '__iter__'): self.raise_postproc_iter()
+      self.postproc = list(self.postproc)
+      while self.postproc and self.postproc[-1] is None:
+        del self.postproc[-1]
+      if len(self.postproc) > len(outdata):
+        self.raise_postproc_len(len(outdata))
+      while len(self.postproc) < len(outdata):
+        self.postproc.append(None)
+      for i  in xrange(len(self.postproc)):
+        if self.postproc[i] is None:
+          self.postproc[i] = self.dummy
+      return tuple([postp(outdat) \
+                    for postp, outdat in zip(self.postproc, outdata)])
+    else:
+      return self.postproc(outdata)
+
+        
+  def save_outdata_seq(self, outarg, outdata):
+    if self.outformat == 'HDF5':
+      return self.save_outdata_seq_hdf5(outarg, outdata)
+    elif self.outformat == 'STDOUT':
+      return self.save_outdata_seq_stdout(outdata)
+    else:
+      self.raise_outformat()
+
+
+  def save_outdata_once_stdout(self, outdata):
+    if outdata: print outdata
+    
+
+  def save_outdata_seq_stdout(self, outdata):
+    if outdata: print outdata
+
+    
+  def save_outdata_once(self, outargs, outdata):
+    if self.outformat == 'HDF5':
+      return self.save_outdata_once_hdf5(outargs, outdata)
+    elif self.outformat == 'STDOUT':
+      return self.save_outdata_once_stdout(outdata)
+    else:
+      self.raise_outformat()
+
+
+  def save_outdata_seq_hdf5(self, filename, outdata):
+    return self.save_file_hdf5(filename, outdata)
+
+
+  def save_outdata_once_hdf5(self, outargs, outdata):
+    if self.outfiles == 'same' and self.infiles == 'inf' \
+    or self.outfiles == 'inf' \
+    or self.outfiles != 'same' and self.outfiles > 1:
+      # many files
+      for filename in outargs:
+        ex = self.save_file_hdf5(filename, outdata)
+        if ex: return ex
+      return 0
+    else:
+      # one file
+      filename = outargs[0]
+      return self.save_file_hdf5(filename, outdata)
+
+
+  def save_file_hdf5(self, filename, outdata):
+    with h5obj.File(filename, 'a') as f:
+      if hasattr(self.outnames, '__iter__'):
+        # if outnames is iterable, outdata also has to be iterable
+        if not hasattr(outdata, '__iter__'):
+          self.raise_outdata(len(self.outnames))
+        self.outnames = list(self.outnames)
+        while self.outnames and self.outnames[-1] is None:
+          del self.outnames[-1]
+        if len(self.outnames) > len(outdata):
+          self.raise_outdata(len(self.outnames))
+        while len(self.outnames) < len(outdata):
+          self.outnames.append(None)
+        for_stdout = []
+        for outname, outdat in zip(self.outnames, outdata):
+          if outname is None: continue
+          elif outname == 'STDOUT': for_stdout.append(outdat)
+          else:
+            ex = self.save_dset_hdf5(f, outname, outdat)
+            if ex: return ex
+        for_stdout = tuple(for_stdout)
+        if len(for_stdout) == 1: for_stdout, = for_stdout
+        if for_stdout: ex = self.save_outdata_seq_stdout(for_stdout)
+        return ex
+      else:
+        # if outnames is scalar, outdata can be anything, but always the
+        # whole outdata is saved in one single dataset
+        if self.outnames is None: return 0
+        elif self.outnames == 'STDOUT':
+          return self.save_outdata_seq_stdout(outdata)
+        else:
+          return self.save_dset_hdf5(f, self.outnames, outdata)
+    
+    
+  def save_dset_hdf5(self, f, name, data):
+    # overwrite if neccessary
+    if name in f:
+      if self.overwrite:
+        del f[name]
+      else:
+        return self.error_dset_exists(name, f.filename)
+    f[name] = data
+    return 0
+
+    
+  def load_indata_seq(self, inarg):
+    if self.informat == 'HDF5':
+      return self.load_indata_seq_hdf5(inarg)
+    elif self.informat == 'STDIN':
+      return self.load_indata_seq_stdin(inarg)
+    elif self.informat in ('ARGS', 'DSETS', 'FILEDSETS'):
+      return self.load_indata_seq_args(inarg)
+    else:
+      self.raise_informat()
+
+
+  def load_indata_once(self, inargs):
+    if self.informat == 'HDF5':
+      return self.load_indata_once_hdf5(inargs)
+    elif self.informat == 'STDIN':
+      return self.load_indata_once_stdin(inargs)
+    elif self.informat in ('ARGS', 'DSETS', 'FILEDSETS'):
+      return self.load_indata_once_args(inargs)
+    else:
+      self.raise_informat()
+
+
+  def read_stdin_line(self):
+    try: line = sys.stdin.readline()
+    except KeyboardInterrupt: # "CTRL-c pressed"
+      self.stop_stdin = True
+      line = ','*(len(self.frequired)-1)
+    if not line:
+      self.stop_stdin = True # "CTRL-d pressed" / EOF
+      line = ','*(len(self.frequired)-1)
+    # strip just one '\n' at the end of the lines, not all
+    if len(line) > 0 and line[-1] == '\n':
+      line = line[:-1]
+    return line
+  
+
+  def load_indata_once_stdin(self, inargs):
+    raise NotImplementedError, 'loading from STDIN not implemented'
+
+
+  def load_indata_seq_stdin(self, inarg):
+    line = self.read_stdin_line()
+    #if line and line[0] == '(' and line[-1] == ')': line = line[1:-1]
+    #elif line and line[0] == '[' and line[-1] == ']': line = line[1:-1]
+    values = line.split(self.sep)
+    if len(self.frequired) != len(values):
+      return self.error_arg_len(len(self.frequired))
+    return dict(zip(self.frequired, values))
+    
+  
+  def load_indata_once_args(self, inargs):
+    many = self.infiles == 'inf' or self.infiles > 1
+    if many:
+      indata = dict((inname, []) for inname in self.frequired)
+    else:
+      indata = dict((inname, None) for inname in self.frequired)
+
+    for inarg in inargs:
+      values = inarg.split(self.sep)
+      if len(self.frequired) != len(values):
+        return self.error_arg_len(len(self.frequired))
+      for reqname, value in zip(self.frequired, values):
+        if many:
+          indata[reqname].append(value)
+        else:
+          indata[reqname] = value
+    return indata
+
+
+  def load_indata_seq_args(self, inarg):
+    values = inarg.split(self.sep)
+    if len(self.frequired) != len(values):
+      return self.error_arg_len(len(self.frequired))
+    return dict(zip(self.frequired, values))
+
+
+  def load_indata_seq_hdf5(self, filename):
+    indata = dict((inname, None) for inname in self.innames)
+    if not os.path.exists(filename): return self.error_file(filename)
+    with h5obj.File(filename, 'r') as f:
+      for inname, dsetname in self.innames.iteritems():
+        if dsetname not in f:
+          if inname in self.fdefaults:
+            value = self.fdefaults[inname]
+          else:
+            return self.error_dset_not_found(dsetname, filename)
+        else:
+          value = f[dsetname]
+        indata[inname] = value
+    return indata
+
+
+  def load_indata_once_hdf5(self, inargs):
+    many = self.infiles == 'inf' or self.infiles > 1
+    if many:
+      indata = dict((inname, []) for inname in self.innames)
+    else:
+      indata = dict((inname, None) for inname in self.innames)
+      
+    for filename in inargs:
+      if not os.path.exists(filename): return self.error_file(filename)
+      with h5obj.File(filename, 'r') as f:
+        for inname, dsetname in self.innames.iteritems():
+          if dsetname not in f:
+            if inname in self.fdefaults:
+              value = self.fdefaults[inname]
+            else:
+              return self.error_dset_not_found(dsetname, filename)
+          else:
+            value = f[dsetname]
+          if many:
+            indata[inname].append(value)
+          else:
+            indata[inname] = value
+    return indata
+        
+            
+  def get_exec_mode(self):
+    """Determine execution mode (sequential, parallel or all at once).
+    Returns "para", "seq" or "once"."""
+    if self.outfiles in (self.infiles, 0, 'same') or self.infiles == 0:
+      if self.indep:
+        return 'para' if self.parallel else 'seq'
+      else:
+        if self.parallel: self.raise_parallel()
+        return 'once'
+    else:
+      if self.indep: self.raise_indep()
+      return 'once'
+        
+
+  def divide_args(self, args):
+    """Divide arguments into two parts (input and output). If an error is
+    found, return the error code. Otherwise, return a tuple of two lists."""
+    nargs = len(args)
+    # 3 input formats and 2 output formats ==> 6 combinations
+    if self.informat == 'HDF5':
+      if self.outformat == 'HDF5':
+        return self.divide_args_file2file(args)
+      elif self.outformat == 'STDOUT':
+        return self.divide_args_file2stdout(args)
+      else:
+        self.raise_outformat()
+    elif self.informat == 'STDIN':
+      if self.outformat == 'HDF5':
+        return self.divide_args_stdin2file(args)
+      elif self.outformat == 'STDOUT':
+        return self.divide_args_stdin2stdout(args)
+      else:
+        self.raise_outformat()
+    elif self.informat in ('ARGS', 'DSETS', 'FILEDSETS'):
+      if self.outformat == 'HDF5':
+        return self.divide_args_args2file(args)
+      elif self.outformat == 'STDOUT':
+        return self.divide_args_args2stdout(args)
+      else:
+        self.raise_outformat()
+    else:
+      self.raise_informat()
+
+
+  def divide_args_args2stdout(self, args):
+    # same as file2stdout
+    return self.divide_args_file2stdout(args)
+    
+
+  def divide_args_args2file(self, args):
+    # almost like "divide_args_file2file()", but "same" is not allowed
+    nargs = len(args)
+    if self.outfiles == 'same': raise_outfiles_same()
+    if self.infiles == 'inf' and self.outfiles == 'inf':
+      # any number of input argument/output file pairs
+      if not self.is_even(nargs): return self.error_arg_pairs()
+      mark = nargs/2
+      return args[:mark], args[mark:]
+    elif self.infiles == self.outfiles:
+      # specific number of input argument/output file pairs
+      if not self.is_even(nargs): return self.error_arg_pairs()
+      if not self.infiles+self.outfiles == nargs:
+        return error_nargs(self.infiles+self.outfiles)
+      mark = nargs/2
+      return args[:mark], args[mark:]
+    elif self.infiles == 'inf':
+      # any number of input files, fixed number of output files
+      if nargs < self.outfiles: return error_nargs_min(self.outfiles)
+      mark = nargs-self.outfiles
+      return args[:mark], args[mark:]
+    elif self.outfiles == 'inf':
+      # fixed number of input files, any number of output files
+      if nargs < self.infiles: return error_nargs_min(self.infiles)
+      mark = self.infiles
+      return args[:mark], args[mark:]
+    else:
+      # specific number of input arguments and output arguments
+      if self.infiles+self.outfiles != nargs:
+        return error_nargs(self.infiles+self.outfiles)
+      mark = self.infiles
+      return args[:mark], args[mark:]
+    
+      
+
+  def divide_args_stdin2stdout(self, args):
+    # no arguments expected
+    nargs = len(args)
+    if nargs > 0: return self.error_nargs(0)
+    return [], []
+
+
+  def divide_args_stdin2file(self, args):
+    # should be completely independent of "self.infiles"
+    nargs = len(args)
+    if self.outfiles == 'same': self.raise_outfiles_same()
+    elif self.outfiles == 'inf':
+      return [], args
+    else:
+      if nargs != self.outfiles: return self.error_nargs(nargs)
+      return [], args
+
+
+  def divide_args_file2stdout(self, args):
+    # should be completely independent of "self.outfiles"
+    nargs = len(args)
+    if self.infiles == 'inf':
+      # any number of input arguments, no output arguments
+      return args, []
+    else:
+      # specific number of input arguments, no output arguments
+      if nargs != self.infiles: return self.error_nargs(self.infiles)
+      return args, []
+   
+
+  def divide_args_file2file(self, args):
+    nargs = len(args)
+    if self.infiles == 'inf' and self.outfiles == 'inf':
+      # any number of input/output file pairs
+      if not self.is_even(nargs): return self.error_pairs()
+      mark = nargs/2
+      return args[:mark], args[mark:]
+    elif self.infiles == self.outfiles:
+      # specific number of input/output file pairs
+      if not self.is_even(nargs): return self.error_pairs()
+      if not self.infiles+self.outfiles == nargs:
+        return self.error_nargs(self.infiles+self.outfiles)
+      mark = nargs/2
+      return args[:mark], args[mark:]
+    elif self.infiles == 'inf' and self.outfiles == 'same':
+      # any number of combined input/output files
+      return args, args
+    elif self.outfiles == 'same':
+      # specific number of combined input/output files
+      if self.infiles != nargs: return self.error_nargs(self.infiles)
+      return args, args
+    elif self.infiles == 'inf':
+      # any number of input files, fixed number of output files
+      if nargs < self.outfiles: return self.error_nargs_min(self.outfiles)
+      mark = nargs-self.outfiles
+      return args[:mark], args[mark:]
+    elif self.outfiles == 'inf':
+      # fixed number of input files, any number of output files
+      if nargs < self.infiles: return self.error_nargs_min(self.infiles)
+      mark = self.infiles
+      return args[:mark], args[mark:]
+    else:
+      # specific number of input arguments and output arguments
+      if self.infiles+self.outfiles != nargs:
+        return self.error_nargs(self.infiles+self.outfiles)
+      mark = self.infiles
+      return args[:mark], args[mark:]
+
+
+  @staticmethod
+  def raise_outfiles_same():
+    raise ValueError, '"same" impossible if "informat" is not "HDF5"'
+    
+  @staticmethod
+  def raise_infiles():
+    raise ValueError, 'expecting non-negative integer or "inf"'
+
+  @staticmethod
+  def raise_outfiles():
+    raise ValueError, 'expecting non-negative integer or "inf" or "same"'
+
+  @staticmethod
+  def raise_informat():
+    raise ValueError, 'expecting "HDF5", "STDIN", "ARGS" or "DSETS"'
+  
+  @staticmethod
+  def raise_outformat():
+    raise ValueError, 'expecting "HDF5" or "STDOUT"'
+
+  @staticmethod
+  def raise_exec_mode():
+    raise ValueError, 'expecting "once", "seq" or "para"'
+
+  @staticmethod
+  def raise_parallel():
+    raise ValueError, 'parallel execution not possible if not independent'
+  
+  @staticmethod
+  def raise_indep():
+    raise ValueError, 'independent execution not possible if '+\
+                      'infiles != outfiles'
+
+  @staticmethod
+  def raise_outdata(outlen):
+    raise ValueError, 'expecting function result with at least '+\
+                      '%i elements' % outlen
+
+  @staticmethod
+  def raise_postproc_iter():
+    raise ValueError, 'postprocessor must be scalar if output data is scalar'
+
+  @staticmethod
+  def raise_postproc_len(outlen):
+    raise ValueError, 'list of postprocessors cannot be longer than '+\
+                      'function result (%i)' % outlen
+
+  @staticmethod
+  def raise_preproc():
+    raise ValueError, 'expecting dictionary of callables'
+                      
+  def error_pairs(self):
+    print >>sys.stderr, '%s: expecting even number of arguments' \
+                        % self.prog
+    return 1
+    
+  def error_arg_pairs(self):
+    print >>sys.stderr, '%s: expecting same number of output ' % self.prog+\
+                        'arguments as number of input arguments'
+    return 1
+
+  def error_nargs(self, nargs):
+    print >>sys.stderr, '%s: expecting exactly %i argument%s' \
+                        % (self.prog, nargs, self.plural(nargs))
+    return 1
+
+  def error_nargs_min(self, nargs):
+    print >>sys.stderr, '%s: expecting at least %i argument%s' \
+                        % (self.prog, nargs, self.plural(nargs))
+    return 1
+
+  def error_file(self, filename):
+    print >>sys.stderr, '%s: file not found: %s' \
+                        % (self.prog, filename)
+    return 1
+
+  def error_dset_not_found(self, dsetname, filename):
+    print >>sys.stderr, '%s: dataset not found: %s/%s' \
+                        % (self.prog, filename, dsetname)
+    return 1
+
+  def error_dset_exists(self, dsetname, filename):
+    print >>sys.stderr, '%s: dataset already exists: %s/%s' \
+                        % (self.prog, filename, dsetname)
+    return 1
+    
+  def error_shortopt(self, shortopt):
+    print >>sys.stderr, '%s: invalid short option "%s"' \
+                        % (self.prog, shortopt)
+    return 1
+
+  def error_stdin_len(self, inlen):
+    print >>sys.stderr, '%s: expecting STDIN line with %i element%s ' \
+                        % (self.prog, inlen, self.plural(inlen)) +\
+                        '(separated by "%s")' % self.sep
+    return 1
+
+  def error_arg_len(self, inlen):
+    print >>sys.stderr, '%s: expecting commandline argument with %i ' \
+                        % (self.prog, inlen) +\
+                        'element%s (separated by "%s")' \
+                        % (self.plural(inlen), self.sep)
+    return 1
+
+
+
+
+    
+  @staticmethod
+  def plural(number):
+    return '' if abs(number) == 1 else 's'
+
+  @staticmethod
+  def is_even(number):
+    return not number % 2
+  
+  @staticmethod
+  def dummy(x):
+    return x
