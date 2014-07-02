@@ -21,74 +21,76 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
 #
-
-"""Make programs out of your Python functions that can be run from the
-command line by simply adding a decorator in front of the function. The
-programs will have a commandline interface based on the optparse module,
-and load data from and save data to files (HDF5 format).
-
-The module name "frog" is meant to be a silly shortcut for
-"function program".
+"""Wrap your Python functions with a command line interface, so that they can
+be run directly from the command line, just like any shell command.  This is
+achieved by simply adding a decorator in front of the function.  The
+commandline interface is powered by the *optparse* module, and data can be
+loaded from and saved to HDF5 files, corresponding to the function arguments or
+return values.
 
 Simple example:
 
-> # file "my_module.py"
-> from frog import Frog
-> @Frog(inmap=dict(x='$@/dset'), preproc=dict(x=list_of(float)))
-> def mean(x):
->   return sum(x)/len(x)
+    >>> # file "my_module.py"
+    >>> from frog import Frog
+    >>> @Frog(inmap=dict(x='$@/dset'), preproc=dict(x=list_of(float)))
+    >>> def mean(x):
+    >>>     return sum(x)/len(x)
 
 Now, you can create a small executable script with the following content:
-> import sys, my_module
-> sys.exit(my_module._mean())
 
-The way the frog is configured in this example, it expects you to specify
-a bunch of HDF5 data files, where each file has a dataset called "dset", and
-the function will be called with the list [x1, x2, x3, ...]
-(length == number of files). By default, the result of the function goes to
-STDOUT (displayed on the screen). However, the behavior can be configured in
-various ways and of course strongly depends on the user's requirements.
+    >>> import sys, my_module
+    >>> sys.exit(my_module._mean())
 
-Major changes in version 0.3:
---> output mapping is now a dictionary, just like input mapping
---> output mapping can now contain references to metadata, like DATE and
-    TIMINGS
+The way the frog is configured in this example, it expects you to specify a
+bunch of HDF5 data files, where each file has a dataset called *dset*, and the
+function will be called with the list [x1, x2, x3, ...] (its length corresponds
+to the number of files). By default, the result of the function goes to STDOUT
+(displayed on the screen). However, the behavior can be configured in various
+ways.
 
-To do:
---> enable parallel execution if in independent execution mode
---> warn about usage with interactively defined functions? (no __name__)
---> be able to specify a fixed file, so instead of "$1/some/dataset", be able
-    to specify "some/file.h5/some/dataset" (for input and output as well)
-    setting default values in input mapping would then only be possible for
-    non-strings (strings were already restricted before, could not start with
-    "$", "%" or "#")
---> allow dynamic mappings, containing placeholders like {option=default}
-    (also multiple), so that options can be used to set dsetnames/paths or also
-    filenames/paths
---> allow slices in mappings, like "$1:/dset" (all but the first file) or
-    "$:4" (the first four arguments) or "$:" (all arguments, equivalent to
-    "$@")
---> case dep+@: be able to restrict number of input/output arguments (min/max)?
---> understand combined filename/dataset paths, including patterns in both
-    parts of the path (feature which is already provided through h5obj.tools)
---> in addition, access dataset attributes, e.g. inmap=dict(a='$0/dset/attr')
---> enable frog configuration options --preproc and --postproc? (update dict)
---> even if no arguments are expected at all, make sure the function is still
-    executed
---> reroute STDOUT and STDERR to file? could be important for parallel
-    execution. DENIED!
---> if default value is True (or bool in general), behave accordingly
---> convert Frog class to a function (not really neccessary, but cleaner)
---> enable timings in milliseconds, reformat, make a new _nicetime function
-    mapping
---> allow "$0" in output mapping (as a source), e.g. to access filename
---> option to "close gaps", i.e. only execute if output datasets do not yet
-    exist
---> enable option to omit missing input datasets also in sequential mode?
---> omit whole file when one input dataset is missing?
-"""
+For further explanation, please refer to the manual (TO DO)."""
+#
+# Major changes in version 0.3:
+# --> output mapping is now a dictionary, just like input mapping
+# --> output mapping can now contain references to metadata, like DATE and
+#     TIMINGS
+#
+# To do:
+# --> enable parallel execution if in independent execution mode
+# --> warn about usage with interactively defined functions? (no __name__)
+# --> be able to specify a fixed file, so instead of "$1/some/dataset", be able
+#     to specify "some/file.h5/some/dataset" (as well for output)
+#     setting default values in input mapping would then only be possible for
+#     non-strings (strings were already restricted before, could not start with
+#     "$", "%" or "#")
+# --> allow dynamic mappings, containing placeholders like {option=default}
+#     (also multiple), so that options can be used to set dsetnames/paths or
+#     also filenames/paths
+# --> allow slices in mappings, like "$1:/dset" (all but the first file) or
+#     "$:4" (the first four arguments) or "$:" (all arguments, equivalent to
+#     "$@")
+# --> case dep+@: be able to restrict number of input/output arguments
+#     (min/max)?
+# --> understand combined filename/dataset paths, including patterns in both
+#     parts of the path (feature which is already provided through h5obj.tools)
+# --> in addition, access dataset attributes, e.g. inmap=dict(a='$0/dset/attr')
+# --> enable frog configuration options --preproc and --postproc? (update dict)
+# --> even if no arguments are expected at all, make sure the function is still
+#     executed
+# --> reroute STDOUT and STDERR to file? could be important for parallel
+#     execution. DENIED!
+# --> if default value is True (or bool in general), behave accordingly
+# --> convert Frog class to a function (not really neccessary, but cleaner)
+# --> enable timings in milliseconds, reformat, make a new _nicetime function
+#     mapping
+# --> allow "$0" in output mapping (as a source), e.g. to access filename
+# --> option to "close gaps", i.e. only execute if output datasets do not yet
+#     exist
+# --> enable option to omit missing input datasets also in sequential mode?
+# --> option to omit whole file when one of the input datasets is missing?
+#
 __created__ = '2013-06-28'
-__modified__ = '2014-02-07'
+__modified__ = '2014-06-30'
 __version__ = '0.3'
 
 import inspect
@@ -109,13 +111,15 @@ except ImportError:
 
 
 class Frog(object):
+    """Implement the Frog decorator."""
+
     def __init__(self, inmap=None, outmap=None, preproc=None, postproc=None,
                  opttypes=None, optdoc=None, shortopts=None, longopts=None,
                  prolog='', epilog='', usage='', version='', wrapname='',
                  overwrite=None, bar=False, stdin_sep=None, stdout_sep=None,
                  first=None, last=None, omit_missing=False):
                  # close_gaps=False
-        """Initialize and configure frog decorator."""
+        """Initialize and configure the frog decorator."""
 
         ### do this later?
         if prolog and prolog.strip()[-1] != '\n':
@@ -162,8 +166,8 @@ class Frog(object):
         wrapper function will have the attribute "__frog__" which is set to
         True. In this way, it may be checked which of the functions defined in
         a module are frog wrappers. The executable script is supposed to call
-        that wrapper function, i.e. using "sys.exit(my_module._my_wrapper())".
-        """
+        that wrapper function, i.e. using
+        "sys.exit(my_module._my_wrapper())"."""
 
         # inspect function
         fmodule = inspect.getmodule(func)
@@ -1213,9 +1217,9 @@ class Frog(object):
             print line
 
     def save_outdata_seq(self, outarg, outmap, outdata, inarg, indata):
-        """Save a single chunk of output data (belonging to at most one
-        output file or one line of standard output) (execution mode
-        "sequential" or "parallel")."""
+        """Save a single chunk of output data (belonging to at most one output
+        file or one line of standard output) (execution mode "sequential" or
+        "parallel")."""
 
         # initialize STDOUT datastructure (mapping colindex-->celldata or
         # just rowdata)
@@ -1265,7 +1269,7 @@ class Frog(object):
             elif isinstance(mapping, basestring) and mapping.startswith('$'):
                 # save data back to input file
                 if not '/' in mapping:
-                    self.raise_outmap()
+                    self.raise_outmap(mapping)
                 dsetname = '/'.join(mapping.split('/')[1:])
                 if mapping.startswith('$@/'):
                     self.raise_outmap(mapping)
@@ -1744,7 +1748,7 @@ def froglist(module):
 def frogexec(frog, name=None, dir='.'):
     """Create a small executable script that calls the specified frog wrapper.
     Expect either the function object of the frog wrapper itself, or a string
-    containing the full module path to the frog wrapper.
+    containing the full module path to that frog wrapper.
 
     The executable script is created in the directory "dir". Default is the
     current working directory. The script will be named according to "name",
@@ -1814,7 +1818,11 @@ def frogexec(frog, name=None, dir='.'):
 
 
 def isfrog(func):
-    """Check if given function object is that of a frog wrapper."""
+    """Check if the given function object possesses at least one frog
+    wrapper.
+
+    Background: As soon as a frog decorator is applied to a function, it leaves
+    a trace by adding an attribute called *__frog__* to the function."""
     return hasattr(func, '__frog__') and func.__frog__
 
 
@@ -1871,8 +1879,8 @@ def print_timings(timings):
 
 
 class list_of(object):
-    """Instances of this class are callables which turn a given iterable into
-    a list of items with the specified data type."""
+    """Instances of this class are callables which turn a given iterable into a
+    list of items with the specified data type."""
 
     def __init__(self, dtype):
         self.dtype = dtype
@@ -1885,8 +1893,8 @@ class list_of(object):
 
 
 class tuple_of(object):
-    """Instances of this class are callables which turn a given iterable into
-    a tuple of items with the specified data type."""
+    """Instances of this class are callables which turn a given iterable into a
+    tuple of items with the specified data type."""
 
     def __init__(self, dtype):
         self.dtype = dtype
@@ -1927,8 +1935,7 @@ class items_of(object):
     """Instances of this class are callables which get a certain item of each
     element of a given iterable, and returns all items in form of a new
     iterable. If item does not exist and a default value is given, return that
-    value.
-    """
+    value."""
 
     def __init__(self, itemname, default=None, dtype=None):
         self.itemname = itemname
