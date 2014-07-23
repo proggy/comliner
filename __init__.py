@@ -90,7 +90,7 @@ For further explanation, please refer to the manual (TO DO)."""
 # --> option to omit whole file when one of the input datasets is missing?
 #
 __created__ = '2013-06-28'
-__modified__ = '2014-06-30'
+__modified__ = '2014-07-23'
 __version__ = '0.3'
 
 import inspect
@@ -100,10 +100,12 @@ import time
 import dummy
 import h5obj
 import progress
-import table
+import easytable
 from columnize import columnize
 #from functools import wraps ## use this? probably not, as our "wrapper" is a
                              ## whole other function with another interface
+import collections
+
 try:
     import optparse2 as optparse
 except ImportError:
@@ -1831,21 +1833,22 @@ def print_timings(timings):
     string = ''
     string += 'total: %g | prepare: %g | first: %g | last: %g\n' \
         % (timings.get('total', 0),
-            timings.get('prepare', 0),
-            timings.get('first', 0),
-            timings.get('last', 0))
+           timings.get('prepare', 0),
+           timings.get('first', 0),
+           timings.get('last', 0))
 
-    tabdict = {}
+    tabdict = collections.OrderedDict()
     for field in ('loop', 'load', 'preproc', 'call', 'postproc', 'save'):
         data = timings.get(field, [])
         if not data:
             continue
         mean = sum(data)/len(data)
-        tabdict[field] = dict(mean=mean, min=min(data), max=max(data))
-    string += table.dodtable(tabdict, cols=['mean', 'min', 'max'],
-                             rows=['loop', 'load', 'preproc', 'call',
-                                   'postproc', 'save'])
-
+        fielddict = collections.OrderedDict()
+        fielddict['mean'] = mean
+        fielddict['min'] = min(data)
+        fielddict['max'] = max(data)
+        tabdict[field] = fielddict
+    string += easytable.autotable(tabdict, titles=True)
     return string
 
 
