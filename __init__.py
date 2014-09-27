@@ -119,7 +119,8 @@ class Frog(object):
                  opttypes=None, optdoc=None, shortopts=None, longopts=None,
                  prolog='', epilog='', usage='', version='', wrapname='',
                  overwrite=None, bar=False, stdin_sep=None, stdout_sep=None,
-                 first=None, last=None, omit_missing=False):
+                 first=None, last=None, omit_missing=False,
+                 allow_interspersed_args=True):
                  # close_gaps=False
         """Initialize and configure the frog decorator."""
 
@@ -157,6 +158,7 @@ class Frog(object):
         self.last = last or dummy.function
         self.omit_missing = omit_missing
         #self.close_gaps = close_gaps
+        self.allow_interspersed_args = allow_interspersed_args
 
     def __call__(self, func):
 
@@ -263,6 +265,8 @@ class Frog(object):
                                            description=description,
                                            prog=self.prog,
                                            version=self.version)
+                if not self.allow_interspersed_args:
+                    op.disable_interspersed_args()
 
                 # define general frog options
                 og = optparse.OptionGroup(op, 'Frog configuration and ' +
