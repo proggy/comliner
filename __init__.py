@@ -84,8 +84,8 @@ For further explanation, please refer to the manual (TO DO)."""
 # --> enable timings in milliseconds, reformat, make a new _nicetime function
 #     mapping
 # --> allow "$0" in output mapping (as a source), e.g. to access filename
-# --> option to "close gaps", i.e. only execute if output datasets do not yet
-#     exist
+# --> option to "fill the gaps", i.e. only execute if one of the output
+#     datasets does not yet exist
 # --> enable option to omit missing input datasets also in sequential mode?
 # --> option to omit whole file when one of the input datasets is missing?
 #
@@ -1629,8 +1629,9 @@ class Frog(object):
 
     @staticmethod
     def raise_reqarg_not_in_inmap(reqarg):
-        raise ValueError('argument "%s" required but missing in input ' +
-                         'mapping' % reqarg)
+        print repr(reqarg)
+        raise ValueError('argument "%s" ' % reqarg +
+                         'required but missing in input mapping')
 
     def raise_outmap_len(self, noutdata):
         raise ValueError('output mapping too long (function delivered only ' +
