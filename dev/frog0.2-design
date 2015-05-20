@@ -1,0 +1,123 @@
+
+
+Frog design
+===========
+
+
+--> maybe helps orientation a little bit
+
+
+class Frog(object);
+  def __init__(self, ***frog configuration***):
+    # store all configuration variables as instance attributes
+    pass
+  
+  def __call__(self, func):
+    # inspect func
+
+    # define wrapper
+    class Wrapper(object):
+      __frog__ = True
+
+      def __call__(wself):
+        # define CL interface
+        # load data
+        # call func
+        # save data
+        return exit_status
+
+    w = Wrapper()
+    setattr(fmodule, wrapname, w)
+    return func
+
+
+
+
+More detail
+-----------
+
+
+--> go into more detail regarding how to handle input and output arguments
+--> think of a most general Python function definition, e.g.
+    def func(a, b, c=0, d=1, *args, **kwargs)
+    
+
+class Frog(object);
+  def __init__(self, inmap=None, outmap=None, ***frog configuration***):
+    # store all configuration variables as instance attributes
+    self.inmap  = inmap or {}
+    self.outmap = outmap or {}
+
+  def __call__(self, func):
+    # inspect func, define the "defaults" dictionary incl. varargs and varkw
+    # frequired contains "a" and "b" in the above example
+
+    # define wrapper
+    class Wrapper(object):
+      __frog__ = True
+
+      def __call__(wself):
+        # define CL interface
+        # parse CL
+        # update frog configuration
+        
+        # determine input argument mapping
+        # --------------------------------
+        #
+        # 1. if "a" and "b" do not yet exist in "inmap", add them as $1 and
+        #    $2
+        #    if $1 or $2 is already used, error (user messed up the mapping
+        #    or is required to specify the mapping for "a" and "b" himself)
+        # 2. if varargs exists and is not in inmap, and there are neither
+        #    required arguments nor any other arguments with default values
+        #    (no a, b, c, d), and '$@' has not yet been used in input
+        #    mapping, then set varargs to '$@'
+        #    otherwise, the user will have to say explicitely where varargs
+        #    should be taken from if he wants to
+        # 3. if neither required nor keyword arguments, nor varargs exist (so
+        #    varkw is the only thing the function has, like
+        #    "def func(**varkw)"), and varkw is not yet in input mapping, set
+        #    varkw to $1 otherwise, the user will have to say explicitely
+        #    where varargs should be taken from
+
+        # determine if execution is independent
+        # -------------------------------------
+        #
+        # if there is only $1 or $1/* in the input mapping and only %1/* or $1/*
+        # in the output mapping (no higher number, and no $@, but STDIN and
+        # %1 (STDOUT) allowed), function works on one (maybe combined)
+        # input/output argument, and hence execution can be done
+        # independently on any (maybe even) number of arguments
+        # ==> indep = True
+
+        # get theoretical number of input and output arguments
+        # (either a fixed non-negative number or 'inf')
+        
+        # show frog information and exit
+
+        # split args into inargs and outargs according to tninargs,
+        # tnoutargs and indep
+        
+
+        # check frog configuration
+
+        # Additional constrains
+        # ---------------------
+        #
+        # * of course $1 and $1/* cannot be mixed - either the CL argument is a
+        #   filename, or it is the data itself, but it is never both
+        # * there can be #1, #2 etc. in inmap (STDIN, comma-separated values)
+
+        # execute according to independent mode
+        # -------------------------------------
+        #
+        # load data, mix with default values and options
+        # preprocess data
+        # call func
+        # postprocess data
+        # save data
+        return exit_status
+
+    w = Wrapper()
+    setattr(fmodule, wrapname, w)
+    return func

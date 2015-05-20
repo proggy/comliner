@@ -1,0 +1,133 @@
+[frog version 0.2]
+
+
+case informat is ARGS
+=====================
+
+
+@Frog(indep=True) # infiles == outfiles or outfiles == 0  # seq, many calls
+def func(a, b=0):
+  return a**2+b
+
+--> case where "a" is a single object, i.e. one of the arguments (sequentially)
+
+
+@Frog(indep=False, outfiles=1) # infiles can be anything  # once, one call
+def func(a, b=0):
+  return sum(a)+b
+
+--> case where "a" is a list of objects, i.e. all the arguments at once
+
+
+@Frog(???)   infiles='FUNCARGS'  # once-mode, one function call
+def func(a, b, c=1, d=0):
+  return (a+b)*c+d
+
+--> new case, where a, b [c, d] are the arguments itself
+--> number of args must be 2 <= N <= 4
+
+
+
+
+Possible solutions
+------------------
+
+
+1. infiles='FUNCARGS'
+
+--> then, any number of args is allowed that is consistent with function
+    definition (in the above example, at least 2, no more than 4)
+--> if there is an *varargs defined in the function, just a minimum number (2)
+    has to be fulfilled
+
+
+2. mapping completely free, e.g. saying a='$1', b='$2'
+
+--> then, also things like a='$@' or varargs='$@' is possible
+--> much more flexible, maybe covers all the user could ever ask for
+--> by default, "guess" a useful mapping
+--> how about "inmap" and "outmap"?
+--> $* the same as $@
+--> $0 can still return the script name
+--> $# can still return the number of arguments
+--> if an object in specified (instead of a string like '$1' or anything),
+    it becomes the (new) default value. Then, always create an option for
+    that value, even if it was not a function argument with a default value
+    before.
+--> if something like '$a' is given, it means that the function argument
+    should get the same value as another function argument. In this way, a
+    function like func(a, b) can be called with a mapping like a='$1', b='$a'
+
+
+NO PROBLEM, STRAIGHT FORWARD, and informat and outformat (and indep) will not
+exist anymore anyway
+*** Mind the case outformat is HDF5! ***
+--> OK, splitting in "inargs" and "outargs" should work as before...
+
+
+
+
+Free input and output mappings
+------------------------------
+
+
+@Frog(inmap=dict(a='$1', b='$2'))
+--> simply map command line arguments to function arguments
+
+
+@Frog(inmap=dict(a='$1/dset_a', b='$1/grp1/dset_b'))
+--> load certain datasets from files given by the respective argument
+--> If only $1 is used, indep may be True.
+    Then repeat the same for every file or argument
+
+
+@Frog(inmap=dict(args='$@'))
+--> if $@ is used, none of $1, $2 etc. must be used
+    
+
+
+Other examples:
+
+@Frog(inmap=dict(x='$@/my_dset'))
+def mean(x):
+  # calculate mean, expecting an iterable
+  return sum(x)/len(x)
+
+
+
+
+Output mapping similar
+----------------------
+
+--> $1/dset, $2/dset etc. means "same", save output objects to the same files
+--> %1/dset, %2/dset: save output objects to the different files
+--> #1, #2 gives the reordering of the output objects put to STDOUT (in one
+    line, comma-separated)
+--> %@/dset: allowed also in outmap, then numargs must be even
+--> numargs must also be even in independent mode with $1/dset present in
+    inmap and %1/dset present in outmap
+--> $@/dset works only if it also exists in inmap
+
+
+--> if there is only $1 and/or %1, and no $2, %2, $@ etc., then "indep=True"
+--> if there are no arguments for STDOUT etc., then "parallel" is allowed
+--> as soon as %2 or $2 or anything is present: "indep=False"
+--> $1, $2 etc. can be mixed with $@, just like in a function definition like
+    func(a, b, *args)
+--> **kwargs can be used, like kwargs='$1/my_dict', or also '$1' (which
+    expects a mapping like "a=1,b=2,c=3" then in the commandline argument),
+    even in independent mode
+
+    
+
+
+Restricting number of arguments/files
+-------------------------------------
+
+NONSENSE!
+Normally, number will be found automatically, depending how many "$1", "$2",
+"%1" etc. exist. Also independent mode can be inferred from that. But in
+independent mode, one could specify the exact number (or minimum or maximum)
+of input/output arguments, i.e. "infiles=10" or "infiles='3-5'" or
+"infiles='-7'" (maximum of 7 files/arguments). But this is not really
+necessary I guess...
