@@ -4,8 +4,8 @@
 # Copyright notice
 # ----------------
 #
-# Copyright (C) 2013-2014 Daniel Jung
-# Contact: djungbremen@gmail.com
+# Copyright (C) 2013-2023 Daniel Jung
+# Contact: proggy-contact@mailbox.org
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by the Free
@@ -21,18 +21,20 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
 #
-"""Wrap your Python functions with a command line interface, so that they can
-be run directly from the command line, just like any shell command.  This is
-achieved by simply adding a decorator in front of the function.  The
-commandline interface is powered by the *optparse* module, and data can be
-loaded from and saved to HDF5 files, corresponding to the function arguments or
-return values.
+"""comliner - Command Line Interface Wrapper for Python Functions
+
+Wrap your Python functions with a simple command line interface, so that they
+can be run directly from the command line, just like any shell command.  This
+is achieved by simply adding a decorator in front of the function and creating
+a small standardized executible script.  The commandline interface is powered
+by the *optparse* module, and data can optionally be loaded from and saved
+to HDF5 files, corresponding to the function arguments or return values.
 
 Simple example:
 
     >>> # file "my_module.py"
-    >>> from frog import Frog
-    >>> @Frog(inmap=dict(x='$@/dset'), preproc=dict(x=list_of(float)))
+    >>> from comliner import Comliner, list_of
+    >>> @Comliner(inmap=dict(x='$@/dset'), preproc=dict(x=list_of(float)))
     >>> def mean(x):
     >>>     return sum(x)/len(x)
 
@@ -41,79 +43,39 @@ Now, you can create a small executable script with the following content:
     >>> import sys, my_module
     >>> sys.exit(my_module._mean())
 
-The way the frog is configured in this example, it expects you to specify a
-bunch of HDF5 data files, where each file has a dataset called *dset*, and the
-function will be called with the list [x1, x2, x3, ...] (its length corresponds
-to the number of files). By default, the result of the function goes to STDOUT
-(displayed on the screen). However, the behavior can be configured in various
-ways.
-
-For further explanation, please refer to the manual (TO DO)."""
-#
-# Major changes in version 0.3:
-# --> output mapping is now a dictionary, just like input mapping
-# --> output mapping can now contain references to metadata, like DATE and
-#     TIMINGS
-#
-# To do:
-# --> enable parallel execution if in independent execution mode
-# --> warn about usage with interactively defined functions? (no __name__)
-# --> be able to specify a fixed file, so instead of "$1/some/dataset", be able
-#     to specify "some/file.h5/some/dataset" (as well for output)
-#     setting default values in input mapping would then only be possible for
-#     non-strings (strings were already restricted before, could not start with
-#     "$", "%" or "#")
-# --> allow dynamic mappings, containing placeholders like {option=default}
-#     (also multiple), so that options can be used to set dsetnames/paths or
-#     also filenames/paths
-# --> allow slices in mappings, like "$1:/dset" (all but the first file) or
-#     "$:4" (the first four arguments) or "$:" (all arguments, equivalent to
-#     "$@")
-# --> case dep+@: be able to restrict number of input/output arguments
-#     (min/max)?
-# --> understand combined filename/dataset paths, including patterns in both
-#     parts of the path (feature which is already provided through h5obj.tools)
-# --> in addition, access dataset attributes, e.g. inmap=dict(a='$0/dset/attr')
-# --> enable frog configuration options --preproc and --postproc? (update dict)
-# --> even if no arguments are expected at all, make sure the function is still
-#     executed
-# --> reroute STDOUT and STDERR to file? could be important for parallel
-#     execution. DENIED!
-# --> if default value is True (or bool in general), behave accordingly
-# --> convert Frog class to a function (not really neccessary, but cleaner)
-# --> enable timings in milliseconds, reformat, make a new _nicetime function
-#     mapping
-# --> allow "$0" in output mapping (as a source), e.g. to access filename
-# --> option to "close gaps", i.e. only execute if output datasets do not yet
-#     exist
-# --> enable option to omit missing input datasets also in sequential mode?
-# --> option to omit whole file when one of the input datasets is missing?
-#
-__created__ = '2013-06-28'
-__modified__ = '2014-07-23'
-__version__ = '0.3'
+The way the Comliner is configured in this example, it expects you to specify
+a bunch of HDF5 data files, where each file has a scalar dataset called *dset*,
+and the function will be called with the list [x1, x2, x3, ...] (its length
+corresponds to the number of files). By default, the result of the function
+goes to STDOUT (displayed on the screen). However, the behavior can be
+configured in various ways.
+"""
+__version__ = '0.4.0'
 
 import inspect
 import os
 import sys
 import time
-import dummy
-import h5obj
-import progress
-import easytable
+import h5py #import h5obj
+from tqdm import tqdm #import progress
+import clitable
 from columnize import columnize
+from . import dummy
 #from functools import wraps ## use this? probably not, as our "wrapper" is a
-                             ## whole other function with another interface
-import collections
+                             ## completely different function with another interface
 
 try:
     import optparse2 as optparse
 except ImportError:
     import optparse
 
+# monkey patch until inspect becomes Python 3 compatible
+if not hasattr(inspect, 'getargspec'):
+    inspect.getargspec = inspect.getfullargspec
 
-class Frog(object):
-    """Implement the Frog decorator."""
+class Comliner(object):
+    """Implement the Comliner decorator.
+    """
 
     def __init__(self, inmap=None, outmap=None, preproc=None, postproc=None,
                  opttypes=None, optdoc=None, shortopts=None, longopts=None,
@@ -121,7 +83,8 @@ class Frog(object):
                  overwrite=None, bar=False, stdin_sep=None, stdout_sep=None,
                  first=None, last=None, omit_missing=False):
                  # close_gaps=False
-        """Initialize and configure the frog decorator."""
+        """Initialize and configure the Comliner decorator.
+        """
 
         ### do this later?
         if prolog and prolog.strip()[-1] != '\n':
@@ -130,7 +93,7 @@ class Frog(object):
             prog = sys.argv[0].rsplit('/', 1)[1]
         except:
             prog = ''
-        #if isinstance(outmap, basestring): outmap = [outmap]
+        #if isinstance(outmap, str): outmap = [outmap]
 
         # store configuration
         self.inmap = dict(inmap) if inmap else dict()
@@ -165,11 +128,12 @@ class Frog(object):
         itself and return it in the end. But an additional wrapper function
         will be created in the same module which has the same name as the
         user's function but with a leading underscore. Further more, the
-        wrapper function will have the attribute "__frog__" which is set to
+        wrapper function will have the attribute "__comliner__" which is set to
         True. In this way, it may be checked which of the functions defined in
-        a module are frog wrappers. The executable script is supposed to call
-        that wrapper function, i.e. using
-        "sys.exit(my_module._my_wrapper())"."""
+        a module are Comliner wrappers. The executable script is supposed to
+        call that wrapper function, i.e. using
+        "sys.exit(my_module._my_wrapper())".
+        """
 
         # inspect function
         fmodule = inspect.getmodule(func)
@@ -179,7 +143,7 @@ class Frog(object):
         fdoc = '\n'.join([s.strip() for s in fdoc.split('\n')])
         #fversion = getattr(self, 'version') \
                    #or time.ctime(os.path.getmtime(fmodule.__file__))
-        self.fargnames, self.fvarargsname, self.fvarkwname, defaults \
+        self.fargnames, self.fvarargsname, self.fvarkwname, defaults, _, _, _ \
             = inspect.getargspec(func)
 
         # make defaults dictionary
@@ -205,14 +169,15 @@ class Frog(object):
         #@wraps(func) ## use this? probably not, as our "wrapper" is a whole
                       ## other function with another interface
         class Wrapper(object):
-            __frog__ = True  # so functions can easily be identified as frogs
+            __comliner__ = True  # so functions can easily be identified as comliners
 
             def __call__(wself):
 
                 """The executable script associated with the function is
                 supposed to call this function. It is not expecting any
                 arguments (the command line arguments will be obtained later)
-                and is returning the exit status."""
+                and is returning the exit status.
+                """
 
                 # first of all, initialize time measurement
                 self.time0 = time.time()
@@ -264,12 +229,12 @@ class Frog(object):
                                            prog=self.prog,
                                            version=self.version)
 
-                # define general frog options
-                og = optparse.OptionGroup(op, 'Frog configuration and ' +
+                # define general comliner options
+                og = optparse.OptionGroup(op, 'Comliner configuration and ' +
                                               'debugging options')
                 og.add_option('-I', '--info', default=False,
                               action='store_true',
-                              help='show frog information and exit')
+                              help='show comliner information and exit')
                 og.add_option('--info-fdefaults', default=False,
                               action='store_true',
                               help='show function default arguments and exit')
@@ -356,9 +321,9 @@ class Frog(object):
 
                 # turn function arguments with default values into options
                 self.optnames = []
-                for argname, default in self.fdefaults.iteritems():
+                for argname, default in self.fdefaults.items():
                     if argname in self.inmap \
-                            and isinstance(self.inmap[argname], basestring) \
+                            and isinstance(self.inmap[argname], str) \
                             and self.startswith_one_of(self.inmap[argname],
                                                        '$%#'):
                         continue
@@ -396,7 +361,7 @@ class Frog(object):
                 self.inmap, self.fdefaults = self.expand_inmap(self.inmap,
                                                                self.fdefaults)
 
-                # update frog configuration
+                # update comliner configuration
                 if self.opts.overwrite:
                     self.overwrite = True
                 if self.opts.no_overwrite:
@@ -418,7 +383,7 @@ class Frog(object):
                 if self.opts.no_omit_missing:
                     self.omit_missing = False
 
-                # show certain information about the frog and exit
+                # show certain information about the comliner and exit
                 if self.opts.info_fdefaults:
                     return self.display_keywords(self.fdefaults)
                 if self.opts.info_preproc:
@@ -438,20 +403,18 @@ class Frog(object):
                 exec_mode = self.get_exec_mode(tninargs, tnoutargs, indep,
                                                self.parallel)
 
-                # show frog information and exit
+                # show comliner information and exit
                 if self.opts.info:
-                    print '%s.%s' % (mname, wrapname),
-                    print '%s.%s' % (mname, fname),
-                    #print '%s>%s' % (self.informat, self.outformat),
-                    print '%s>%s' % (tninargs, tnoutargs),
-                    print 'para' if self.parallel \
-                        else ('indep' if indep else 'dep'),
-                    print exec_mode
+                    print('%s.%s' % (mname, wrapname), end=" ")
+                    print('%s.%s' % (mname, fname), end=" ")
+                    #print('%s>%s' % (self.informat, self.outformat), end=" ")
+                    print('%s>%s' % (tninargs, tnoutargs), end=" ")
+                    print('para' if self.parallel else ('indep' if indep else 'dep'), end=" ")
+                    print(exec_mode)
                     return 0
 
                 # divide argument list (input/output files)
-                inargs, outargs = self.divide_args(args, tninargs, tnoutargs,
-                                                   indep)
+                inargs, outargs = self.divide_args(args, tninargs, tnoutargs, indep)
 
                 ### I think in sequential mode, this should be placed elsewhere
                 # skip if output files do not exist
@@ -517,14 +480,14 @@ class Frog(object):
                 # end time measurements
                 self.timings['total'] = time.time()-self.time0
                 if self.opts.timings:
-                    print print_timings(self.timings)
+                    print(print_timings(self.timings))
 
                 return ex
 
             def __repr__(wself):
-                return '<frog wrapper for %s.%s>' % (fmodule.__name__, fname)
+                return '<Comliner wrapper for %s.%s>' % (fmodule.__name__, fname)
 
-        # put frog into module
+        # put comliner into module
         wrapper = Wrapper()
         wrapper.__doc__ = self.prolog + '\n' + (func.__doc__ or '')
         wrapper.__name__ = wrapname
@@ -542,7 +505,8 @@ class Frog(object):
 
     def exec_once(self, inargs, outargs, opts, func):
         """Load and save all data, function has access to all the data at
-        once."""
+        once.
+        """
 
         time0 = time.time()
 
@@ -605,7 +569,7 @@ class Frog(object):
     def exec_seq(self, inargs, outargs, opts, func, indep,
                  tninargs, tnoutargs):
         """Load and save data one by one, function works on each chunk
-        (argument or argument pair or file or file pair or STDIN/STDOUT line
+        (argument or argument pair or file or file pair or STDIN/STDOUT line)
         separately.
         """
         self._stdin_eof = False  # initialize flag that EOF has been received
@@ -625,7 +589,7 @@ class Frog(object):
         eternal = self.any_startswith(self.inmap.values(), '#@') \
             or indep and self.any_startswith(self.inmap.values(), '#')
 
-        with progress.Bar(nloop, verbose=self.bar) as bar:
+        with tqdm(total=nloop, disable=not self.bar) as bar: #progress.Bar(nloop, verbose=self.bar) as bar:
             i = 0
             while i < nloop or eternal:
                 time0 = time.time()
@@ -697,7 +661,9 @@ class Frog(object):
         return 0
 
     def auto_usage(self, tninargs, tnoutargs, indep, inmap, outmap):
-        """Generate a suitable usage string based on frog configuration."""
+        """Generate a suitable usage string based on comliner configuration.
+        """
+        
         # input part
         if indep:
             if self.any_startswith(inmap.values(), '$0/'):
@@ -706,8 +672,8 @@ class Frog(object):
                 else:
                     inpart = '[INPUT_FILE_1 [INPUT_FILE_2 [...]]]'
             elif '$0' in inmap.values():
-                for argname, mapping in inmap.iteritems():
-                    if isinstance(mapping, basestring) and mapping == '$0':
+                for argname, mapping in inmap.items():
+                    if isinstance(mapping, str) and mapping == '$0':
                         inpart = '[%s_1 [%s_2 [...]]]' % ((argname.upper(),)*2)
                         break
                     else:
@@ -723,16 +689,16 @@ class Frog(object):
                 else:
                     inpart = '[INPUT_FILE_1 [INPUT_FILE_2 [...]]]'
             elif '$@' in inmap.values():
-                for argname, mapping in inmap.iteritems():
-                    if isinstance(mapping, basestring) and mapping == '$@':
+                for argname, mapping in inmap.items():
+                    if isinstance(mapping, str) and mapping == '$@':
                         inpart = '[%s_1 [%s_2 [...]]]' % ((argname.upper(),)*2)
                         break
                 else:
                     inpart = ''
             else:
                 mappings = {}
-                for argname, mapping in inmap.iteritems():
-                    if isinstance(mapping, basestring) \
+                for argname, mapping in inmap.items():
+                    if isinstance(mapping, str) \
                             and mapping.startswith('$'):
                         mappings[mapping] = argname
                 keys = mappings.keys()
@@ -761,7 +727,7 @@ class Frog(object):
             ### to do: support $@ and %@, like in input part above
             indices = set()
             for mapping in outmap.values():
-                if isinstance(mapping, basestring) \
+                if isinstance(mapping, str) \
                         and mapping.startswith('%') and '/' in mapping:
                     argind = self.get_argind(mapping, symbol='%')
                     if argind is None:
@@ -771,7 +737,7 @@ class Frog(object):
             indices.sort()
             if len(indices) > 1:
                 outpart = ' '.join(['OUTPUT_FILE_%i' % i
-                                    for i in xrange(len(indices))])
+                                    for i in range(len(indices))])
             elif len(indices) == 1:
                 outpart = 'OUTPUT_FILE'
             else:
@@ -784,14 +750,15 @@ class Frog(object):
 
     def auto_outmap(self, outmap, outdata):
         """Automatically fill output mapping with standard mappings if it is
-        still empty."""
+        still empty.
+        """
         if outdata is None:
             return outmap
         if not outmap:
             if type(outdata) is tuple:
-                return dict([(i, '#0/%i' % i) for i in xrange(len(outdata))])
+                return dict([(i, '#0/%i' % i) for i in range(len(outdata))])
                 # return tuple(['#0/%i' % index for index in
-                # xrange(len(outdata))])
+                # range(len(outdata))])
             else:
                 return {0: '#0'}
         return outmap
@@ -814,7 +781,8 @@ class Frog(object):
 
     def update_outmap(self, outmap):
         """Update output mapping with user-defined content from the --outmap
-        command line option."""
+        command line option.
+        """
         if self.opts.outmap:
             kwpairs = self.opts.outmap.split(',')
             for kwpair in kwpairs:
@@ -893,11 +861,12 @@ class Frog(object):
         """Determine independent mode, i.e. find out if function only depends
         on maximal one input and maximal one output argument, so that it can be
         applied independently (sequential or parallel) on all the arguments or
-        data files."""
+        data files.
+        """
         # as soon as a $1 (or higher) is found in inmap, or a $1 or %1 is found
         # in outmap, return False
-        for mapping in inmap.values()+outmap.values():
-            if not isinstance(mapping, basestring):
+        for mapping in list(inmap.values()) + list(outmap.values()):
+            if not isinstance(mapping, str):
                 continue
             if mapping.startswith('$@'):
                 return False
@@ -920,7 +889,8 @@ class Frog(object):
 
     def get_exec_mode(self, tninargs, tnoutargs, indep, parallel):
         """Determine execution mode (sequential, parallel or all at once).
-        Returns "para", "seq" or "once"."""
+        Returns "para", "seq" or "once".
+        """
         if tnoutargs in (tninargs, 0) or tninargs == 0:
             if indep:
                 return 'para' if parallel else 'seq'
@@ -936,13 +906,14 @@ class Frog(object):
     def divide_args(self, args, tninargs, tnoutargs, indep):
         """Divide arguments into two parts (input and output). If an error is
         found, return the error code. Otherwise, return a tuple of two
-        lists."""
+        lists.
+        """
         nargs = len(args)
         if tninargs == 'inf':
             if tnoutargs == 'inf':
                 if not self.is_even(nargs):
                     self.error_arg_pairs()
-                mark = nargs/2
+                mark = nargs / 2
                 return args[:mark], args[mark:]
             else:
                 if nargs < tnoutargs:
@@ -966,8 +937,9 @@ class Frog(object):
         """Extract the argument index from a mapping, i.e. the number in "$1"
         or "$2/any_dataset". Return None if mapping is not string, or doesn't
         start with "$", or starts with "$@". Instead of "$", another symbol can
-        be chosen."""
-        if isinstance(mapping, basestring) and mapping.startswith(symbol):
+        be chosen.
+        """
+        if isinstance(mapping, str) and mapping.startswith(symbol):
             slashpos = mapping.find('/')
             slashpos = None if slashpos == -1 else slashpos
             try:
@@ -978,25 +950,27 @@ class Frog(object):
         return None
 
     def display_keywords(self, dictionary):
-        print repr(dictionary)
+        print(repr(dictionary))
+        #print(repr(dictionary[list(dictionary.keys())[0]][0]))
         #keys = dictionary.keys()
         #keys.sort()
         #for key in keys:
             #value = dictionary[key]
-            #print '%s=%s (%s)' % (key, repr(value), type(value).__name__)
+            #print('%s=%s (%s)' % (key, repr(value), type(value).__name__))
 
     def display_list(self, iterable):
         if iterable:
-            #print ', '.join([repr(i) for i in iterable])
-            print repr(iterable)
+            #print(', '.join([repr(i) for i in iterable]))
+            print(repr(iterable))
 
     def display_object(self, obj):
-        print repr(obj)
+        print(repr(obj))
 
     def split_indata(self, indata):
         """Convert input data (already preprocessed) into a variable list of
         arguments (inargs) and a dictionary of keyword arguments (inkwargs),
-        ready to be passed to the function."""
+        ready to be passed to the function.
+        """
         inargs = []
         indata = indata.copy()
         for argname in self.fargnames:
@@ -1011,19 +985,21 @@ class Frog(object):
         return inargs, inkwargs
 
     def apply_preproc(self, indata):
-        """Apply preprocessors to input data."""
+        """Apply preprocessors to input data.
+        """
         if self.preproc is None:
             return indata
         if not isinstance(self.preproc, dict):
             self.raise_preproc()
-        for name, prep in self.preproc.iteritems():
+        for name, prep in self.preproc.items():
             if prep is not None and name in indata:  # if None,
                                                      # del indata[name]?
                 indata[name] = prep(indata[name])
         return indata
 
     def apply_postproc(self, outdata):
-        """Apply postprocessors to output data."""
+        """Apply postprocessors to output data.
+        """
         if hasattr(self.postproc, '__iter__') \
                 and not type(self.postproc) is type:
             # if outdata is scalar, also postprocessor must be scalar
@@ -1036,7 +1012,7 @@ class Frog(object):
                 self.raise_postproc_len(len(outdata))
             while len(self.postproc) < len(outdata):
                 self.postproc.append(None)
-            for i in xrange(len(self.postproc)):
+            for i in range(len(self.postproc)):
                 if self.postproc[i] is None:
                     self.postproc[i] = dummy.function1
             return tuple([postp(outdat)
@@ -1045,7 +1021,7 @@ class Frog(object):
             return self.postproc(outdata)
 
     def get_from_outdata(self, source, outdata, indata):
-        if isinstance(source, basestring):
+        if isinstance(source, str):
             if source == 'ALL':
                 data = outdata
             elif source == 'DATE':
@@ -1073,7 +1049,8 @@ class Frog(object):
         return data
 
     def save_outdata_once(self, outargs, outmap, outdata, inargs, indata):
-        """Save all output data at once (execution mode "all-at-once")."""
+        """Save all output data at once (execution mode "all-at-once").
+        """
 
         # initialize STDOUT datastructure (mapping rowindex-->rowdata or just
         # data. rowdata can in turn be either a mapping colindex-->celldata or
@@ -1087,11 +1064,11 @@ class Frog(object):
         if type(outdata) is not tuple:
             outdata = (outdata,)
 
-        for source, mapping in outmap.iteritems():
+        for source, mapping in outmap.items():
             data = self.get_from_outdata(source, outdata, indata)
             if mapping is None:
                 continue
-            elif isinstance(mapping, basestring) and mapping.startswith('#'):
+            elif isinstance(mapping, str) and mapping.startswith('#'):
                 # send data to STDOUT, maybe choose row, maybe choose column
                 if mapping.count('/') > 1:
                     self.raise_outmap(mapping)
@@ -1144,7 +1121,7 @@ class Frog(object):
                         # set a whole row
                         stdout_data[rowindex] = str(data)
 
-            elif isinstance(mapping, basestring) and mapping.startswith('$'):
+            elif isinstance(mapping, str) and mapping.startswith('$'):
                 # save data back to input file
                 if not '/' in mapping:
                     self.raise_outmap(mapping)
@@ -1168,7 +1145,7 @@ class Frog(object):
                     filename = inargs[argind]
                     self.save_dset(filename, dsetname, data, self.overwrite)
 
-            elif isinstance(mapping, basestring) and mapping.startswith('%'):
+            elif isinstance(mapping, str) and mapping.startswith('%'):
                 # save data to dedicated output file
                 if not '/' in mapping:
                     self.raise_outmap(mapping)
@@ -1203,11 +1180,11 @@ class Frog(object):
             keys = stdout_data.keys()
             nlines = max(keys) + 1 if keys else 0
             lines = ['']*nlines
-            for rowindex, row in stdout_data.iteritems():
+            for rowindex, row in stdout_data.items():
                 if type(row) is dict:
                     rowlen = max(row.keys())+1 if row else 0
                     rowlist = ['']*rowlen
-                    for colindex, cell in row.iteritems():
+                    for colindex, cell in row.items():
                         rowlist[colindex] = str(cell)
                     line = self.stdout_sep.join(rowlist)
                 else:
@@ -1216,12 +1193,13 @@ class Frog(object):
         else:
             lines = str(stdout_data)
         for line in lines:
-            print line
+            print(line)
 
     def save_outdata_seq(self, outarg, outmap, outdata, inarg, indata):
         """Save a single chunk of output data (belonging to at most one output
         file or one line of standard output) (execution mode "sequential" or
-        "parallel")."""
+        "parallel").
+        """
 
         # initialize STDOUT datastructure (mapping colindex-->celldata or
         # just rowdata)
@@ -1236,11 +1214,11 @@ class Frog(object):
         if type(outdata) is not tuple:
             outdata = (outdata,)
 
-        for source, mapping in outmap.iteritems():
+        for source, mapping in outmap.items():
             data = self.get_from_outdata(source, outdata, indata)
             if mapping is None:
                 continue
-            elif isinstance(mapping, basestring) and mapping.startswith('#'):
+            elif isinstance(mapping, str) and mapping.startswith('#'):
                 # send data to STDOUT, maybe choose column
                 if mapping.count('/') > 1:
                     self.raise_outmap(mapping)
@@ -1268,7 +1246,7 @@ class Frog(object):
                         # set the whole row
                         stdout_data[rowindex] = data
 
-            elif isinstance(mapping, basestring) and mapping.startswith('$'):
+            elif isinstance(mapping, str) and mapping.startswith('$'):
                 # save data back to input file
                 if not '/' in mapping:
                     self.raise_outmap(mapping)
@@ -1283,7 +1261,7 @@ class Frog(object):
                     filename = inarg
                     self.save_dset(filename, dsetname, data, self.overwrite)
 
-            elif isinstance(mapping, basestring) and mapping.startswith('%'):
+            elif isinstance(mapping, str) and mapping.startswith('%'):
                 # save data to dedicated output file
                 if not '/' in mapping:
                     self.raise_outmap(mapping)
@@ -1307,20 +1285,21 @@ class Frog(object):
         elif type(stdout_data) is dict:
             rowlen = max(stdout_data.keys())+1 if stdout_data else 0
             rowlist = ['']*rowlen
-            for colindex, cell in stdout_data.iteritems():
+            for colindex, cell in stdout_data.items():
                 rowlist[colindex] = str(cell)
             line = self.stdout_sep.join(rowlist)
         else:
             line = str(stdout_data)
         if line:
-            print line
+            print(line)
 
     def save_dset(self, filename, dsetname, data, overwrite=None, mode='a'):
         """Save dataset to file. Overwrite if self.overwrite is True, never
         overwrite if self.overwrite is False, and if it is None, prompt the
-        user to decide.  """
+        user to decide.
+        """
         if os.path.exists(filename):
-            with h5obj.File(filename, 'r') as f:
+            with h5py.File(filename, 'r') as f:
                 found = dsetname in f
         else:
             found = False
@@ -1338,13 +1317,14 @@ class Frog(object):
                 pass
             else:
                 return
-        with h5obj.File(filename, mode) as f:
+        with h5py.File(filename, mode) as f:
             if found:
                 del f[dsetname]
             f[dsetname] = data
 
     def load_indata_once(self, inargs, inmap):
-        """Load all input data at once (execution mode "all-at-once")."""
+        """Load all input data at once (execution mode "all-at-once").
+        """
 
         # DEFINITION: #0 means "row 1 from stdin", #@ means "all rows from
         # stdin" multiple values from one row are referenced by something like
@@ -1361,8 +1341,8 @@ class Frog(object):
                 stdin_lines = stdin.split('\n') if stdin else []
 
         indata = {}
-        for argname, mapping in inmap.iteritems():
-            if isinstance(mapping, basestring) and mapping.startswith('#'):
+        for argname, mapping in inmap.items():
+            if isinstance(mapping, str) and mapping.startswith('#'):
                 # from STDIN
                 if mapping.count('/') > 1:
                     self.raise_inmap(mapping)
@@ -1402,7 +1382,7 @@ class Frog(object):
                             self.error_stdin_len()
                         indata[argname] = stdin_lines[argind]
 
-            elif isinstance(mapping, basestring) and mapping.startswith('$'):
+            elif isinstance(mapping, str) and mapping.startswith('$'):
                 # from CL argument
                 if '/' in mapping:
                     # CL argument is filename, load data from file
@@ -1411,10 +1391,10 @@ class Frog(object):
                         # get dataset from all files
                         indata[argname] = []
                         for filename in inargs:
-                            with h5obj.File(filename, 'r') as f:
+                            with h5py.File(filename, 'r') as f:
                                 found = dsetname in f
                                 if found:
-                                    data = f[dsetname]
+                                    data = f[dsetname][()]
                             if not found:
                                 #if argname in self.fdefaults: ### wrong here
                                 #  data = self.fdefaults[argname]
@@ -1422,8 +1402,7 @@ class Frog(object):
                                 if self.omit_missing:
                                     continue
                                 else:
-                                    self.error_dset_not_found(dsetname,
-                                                              filename)
+                                    self.error_dset_not_found(dsetname, filename)
                             indata[argname].append(data)
                     else:
                         # get dataset from one specific file
@@ -1433,7 +1412,7 @@ class Frog(object):
                         filename = inargs[argind]
                         if not os.path.exists(filename):
                             self.error_file(filename)
-                        with h5obj.File(filename, 'r') as f:
+                        with h5py.File(filename, 'r') as f:
                             found = dsetname in f
                             if found:
                                 data = f[dsetname]
@@ -1451,7 +1430,7 @@ class Frog(object):
                         argind = self.get_argind(mapping, symbol='$')
                         indata[argname] = inargs[argind]
 
-            elif isinstance(mapping, basestring) and mapping.startswith('%'):
+            elif isinstance(mapping, str) and mapping.startswith('%'):
                 self.raise_percent_in_inmap(mapping)
 
             else:
@@ -1468,7 +1447,8 @@ class Frog(object):
     def load_indata_seq(self, inarg, inmap):
         """Load only one chunk of data (belonging to one command line argument,
         one input file, or one line of standard input) (execution mode
-        "sequential" or "parallel")."""
+        "sequential" or "parallel").
+        """
 
         if self.any_startswith(inmap.values(), '#'):
             stdin_line = self.read_stdin_line()
@@ -1476,8 +1456,8 @@ class Frog(object):
                 return {}  # leave early, cancel function call
 
         indata = {}
-        for argname, mapping in inmap.iteritems():
-            if isinstance(mapping, basestring) and mapping.startswith('#'):
+        for argname, mapping in inmap.items():
+            if isinstance(mapping, str) and mapping.startswith('#'):
                 # from STDIN
                 if mapping == '#@':
                     self.raise_inmap(mapping)
@@ -1496,7 +1476,7 @@ class Frog(object):
                 else:
                     # load whole row
                     indata[argname] = stdin_line.strip()
-            elif isinstance(mapping, basestring) and mapping.startswith('$'):
+            elif isinstance(mapping, str) and mapping.startswith('$'):
                 # from CL argument
                 if '/' in mapping:
                     # CL argument is filename, load data from file
@@ -1511,7 +1491,7 @@ class Frog(object):
                         filename = inarg
                         if not os.path.exists(filename):
                             self.error_file(filename)
-                        with h5obj.File(filename, 'r') as f:
+                        with h5py.File(filename, 'r') as f:
                             found = dsetname in f
                             if found:
                                 data = f[dsetname]
@@ -1532,7 +1512,7 @@ class Frog(object):
                             self.raise_argind(mapping)
                         indata[argname] = inarg
 
-            elif isinstance(mapping, basestring) and mapping.startswith('%'):
+            elif isinstance(mapping, str) and mapping.startswith('%'):
                 self.raise_percent_in_inmap(mapping)
 
             else:
@@ -1563,9 +1543,10 @@ class Frog(object):
     @staticmethod
     def any_startswith(objects, string):
         """Return true if any of the given objects starts with the given
-        string. Non-strings among the objects are ignored."""
+        string. Non-strings among the objects are ignored.
+        """
         for obj in objects:
-            if not isinstance(obj, basestring):
+            if not isinstance(obj, str):
                 continue
             if obj.startswith(string):
                 return True
@@ -1659,59 +1640,55 @@ class Frog(object):
         raise ValueError('bad STDOUT data structure')
 
     def error_pairs(self):
-        print >>sys.stderr, '%s: expecting even number of arguments' \
-                            % self.prog
+        print(f'{self.prog}: expecting even number of arguments', file=sys.stderr)
         sys.exit(1)
 
     def error_arg_pairs(self):
-        print >>sys.stderr, '%s: expecting same number of ' % self.prog + \
-                            'output arguments as number of input arguments'
+        print(f'{self.prog}: expecting same number of output arguments',
+              'as number of input arguments', file=sys.stderr)
         sys.exit(1)
 
     def error_nargs(self, nargs):
-        print >>sys.stderr, '%s: expecting exactly %i argument%s' \
-                            % (self.prog, nargs, self.plural(nargs))
+        print(f'{self.prog}: expecting exactly {nargs} argument{self.plural(nargs)}',
+              file=sys.stderr)
         sys.exit(1)
 
     def error_nargs_min(self, nargs):
-        print >>sys.stderr, '%s: expecting at least %i argument%s' \
-                            % (self.prog, nargs, self.plural(nargs))
+        print(f'{self.prog}: expecting at least {nargs} argument{self.plural(nargs)}',
+              file=sys.stderr)
         sys.exit(1)
 
     def error_file(self, filename):
-        print >>sys.stderr, '%s: cannot load from "%s": no such file' \
-                            % (self.prog, filename)
+        print(f'{self.prog}: cannot load from "{filename}": no such file', file=sys.stderr)
         sys.exit(1)
 
     def error_dset_not_found(self, dsetname, filename):
-        print >>sys.stderr, '%s: cannot load dataset "%s/%s": no such ' \
-                            'dataset' % (self.prog, filename, dsetname)
+        print(f'{self.prog}: cannot load dataset "{filename}/{dsetname}": no such dataset',
+              file=sys.stderr)
         sys.exit(1)
 
     def error_dset_exists(self, dsetname, filename):
-        print >>sys.stderr, '%s: dataset already exists: %s/%s' \
-                            % (self.prog, filename, dsetname)
+        print(f'{self.prog}: dataset already exists: {filename}/{dsetname}',
+              file=sys.stderr)
         sys.exit(1)
 
     def error_dset_omit(self, dsetname, filename):
-        print >>sys.stderr, '%s: omitting dataset "%s/%s": already exists' \
-                            % (self.prog, filename, dsetname)
+        print(f'{self.prog}: omitting dataset "{filename}/{dsetname}": already exists',
+              file=sys.stderr)
 
     def error_shortopt(self, shortopt):
-        print >>sys.stderr, '%s: invalid short option "%s"' \
-                            % (self.prog, shortopt)
+        print(f'{self.prog}: invalid short option "{shortopt}"', file=sys.stderr)
         sys.exit(1)
 
     def error_stdin_len(self, nlines):
-        print >>sys.stderr, '%s: expecting at least %i line%s of STDIN' \
-                            % (self.prog, nlines, self.plural(nlines))
+        print(f'{self.prog}: expecting at least {nlines} line{self.plural(nlines)} of STDIN',
+              file=sys.stderr)
         sys.exit(1)
 
     #def error_arg_len(self, inlen):
-        #print >>sys.stderr, '%s: expecting commandline argument with %i ' \
-                            #% (self.prog, inlen) +\
-                            #'element%s (separated by "%s")' \
-                            #% (self.plural(inlen), self.sep_stdin)
+        #print(f'{self.prog}: expecting commandline argument with {inlen}',
+        #      f'element{self.plural(inlen)} (separated by "{self.sep_stdin}")',
+        #      file=sys.stderr)
         #sys.exit(1)
 
     @staticmethod
@@ -1723,46 +1700,46 @@ class Frog(object):
         return not number % 2
 
 
-#===================================================#
-# tools to list frogs and create executable scripts #
-#===================================================#
+#=======================================================#
+# tools to list comliners and create executable scripts #
+#=======================================================#
 
 
-@Frog(postproc=columnize)
-def froglist(module):
-    """List all frogs defined in a certain module. The module can be a string
-    (module path) or the module object itself."""
-    if isinstance(module, basestring):
+@Comliner(postproc=columnize)
+def comlinerlist(module):
+    """List all comliners defined in a certain module. The module can be a
+    string (module path) or the module object itself.
+    """
+    if isinstance(module, str):
         module = __import__(module, fromlist=['something'])
         # it is an interesting issue why "fromlist" cannot be an empty list if
         # __import__ shall return the rightmost submodule in a module path:
         # http://stackoverflow.com/questions/2724260/why-does-pythons-import
         # -require-fromlist
     names = []
-    for name, obj in module.__dict__.iteritems():
-        if isfrog(obj):
+    for name, obj in module.__dict__.items():
+        if iscomliner(obj):
             names.append(name)
     names.sort()
     return names
 
 
-@Frog()
-def frogexec(frog, name=None, dir='.'):
-    """Create a small executable script that calls the specified frog wrapper.
-    Expect either the function object of the frog wrapper itself, or a string
-    containing the full module path to that frog wrapper.
+@Comliner()
+def comlinerexec(comliner, name=None, dir='.'):
+    """Create a small executable script that calls the specified comliner
+    wrapper. Expect either the function object of the comliner wrapper itself,
+    or a string containing the full module path to that comliner wrapper.
 
     The executable script is created in the directory "dir". Default is the
     current working directory. The script will be named according to "name",
-    otherwise it will be based on the name of the function object of the frog
-    wrapper.
+    otherwise it will be based on the name of the function object of the
+    comliner wrapper.
 
-    An attempt to make the script executable is made, using "chmod +x"."""
-    # 2013-06-28 - 2014-02-07
-
-    if isinstance(frog, basestring):
+    An attempt is made to make the script executable, using "chmod +x".
+    """
+    if isinstance(comliner, str):
         # decode module path
-        modulename, frogname = frog.rsplit('.', 1)
+        modulename, comlinername = comliner.rsplit('.', 1)
         #modulename_orig = modulename
         module = None
         others = []
@@ -1775,24 +1752,24 @@ def frogexec(frog, name=None, dir='.'):
                 continue
             break
         if module is None:
-            raise ImportError('unable to locate frog definition %s' % frog)
+            raise ImportError('unable to locate comliner definition %s' % comliner)
         module2 = module
         for other in others:
             module2 = getattr(module2, other)
 
-        frog = getattr(module2, frogname)
+        comliner = getattr(module2, comlinername)
     else:
-        # get name of module and name of frog wrapper
-        modulename, frogname = __name__, frog.__name__
-    #print modulename, others, frogname
+        # get name of module and name of comliner wrapper
+        modulename, comlinername = __name__, comliner.__name__
+    #print(modulename, others, comlinername)
 
     # check object
-    if not isfrog(frog):
-        raise ValueError('given function object is not a frog')
+    if not iscomliner(comliner):
+        raise ValueError('given function object is not a comliner')
 
     # determine filename
     if not name:
-        name = frog.__name__
+        name = comliner.__name__
         while name.startswith('_'):
             name = name[1:]
     path = os.path.relpath(os.path.join(dir, name))
@@ -1808,27 +1785,27 @@ def frogexec(frog, name=None, dir='.'):
         otherspath = '.'.join(others)
         if otherspath:
             otherspath += '.'
-        f.write('frog = %s.%s%s\n' % (modulename, otherspath, frogname))
-        #f.write('from %s import %s as frog\n' % (modulename, frogname))
-        f.write('sys.exit(frog())\n')
+        f.write('comliner = %s.%s%s\n' % (modulename, otherspath, comlinername))
+        #f.write('from %s import %s as comliner\n' % (modulename, comlinername))
+        f.write('sys.exit(comliner())\n')
 
     # try to make it executable
     try:
         os.system('chmod +x %s' % path)
     except:
-        print >>sys.stderr, 'warning: unable to change permissions: %s' % path
+        print(f'warning: unable to change permissions: {path}', file=sys.stderr)
 
 
-def isfrog(func):
-    """Check if the given function object possesses at least one frog
+def iscomliner(func):
+    """Check if the given function object possesses at least one comliner
     wrapper.
 
-    Background: As soon as a frog decorator is applied to a function, it leaves
-    a trace by adding an attribute called *__frog__* to the function."""
-    return hasattr(func, '__frog__') and func.__frog__
+    Background: As soon as a comliner decorator is applied to a function, it leaves
+    a trace by adding an attribute called *__comliner__* to the function."""
+    return hasattr(func, '__comliner__') and func.__comliner__
 
 
-@Frog(inmap=dict(timings='$0/timings'))
+@Comliner(inmap=dict(timings='$0/timings'))
 def print_timings(timings):
     string = ''
     string += 'total: %g | prepare: %g | first: %g | last: %g\n' \
@@ -1837,23 +1814,23 @@ def print_timings(timings):
            timings.get('first', 0),
            timings.get('last', 0))
 
-    tabdict = collections.OrderedDict()
+    tabdict = {}
     for field in ('loop', 'load', 'preproc', 'call', 'postproc', 'save'):
         data = timings.get(field, [])
         if not data:
             continue
         mean = sum(data)/len(data)
-        fielddict = collections.OrderedDict()
+        fielddict = {}
         fielddict['mean'] = mean
         fielddict['min'] = min(data)
         fielddict['max'] = max(data)
         tabdict[field] = fielddict
-    string += easytable.autotable(tabdict, titles=True)
+    string += clitable.autotable(tabdict, titles=True)
     return string
 
 
 # still with _nicetime
-#@Frog(inmap=dict(timings='$0/timings'))
+#@Comliner(inmap=dict(timings='$0/timings'))
 #def print_timings(timings):
 #    string = ''
 #    string += 'total: %s | prepare: %s | first: %s | last: %s\n' \
@@ -1883,41 +1860,48 @@ def print_timings(timings):
 
 class list_of(object):
     """Instances of this class are callables which turn a given iterable into a
-    list of items with the specified data type."""
+    list of items with the specified data type.
+    """
 
     def __init__(self, dtype):
         self.dtype = dtype
 
     def __call__(self, iterable):
+        #print(repr(iterable))
         iterable = list(iterable)
-        for i in xrange(len(iterable)):
+        #print(repr(iterable))
+        for i in range(len(iterable)):
+            #print(repr(iterable[i]))
             iterable[i] = self.dtype(iterable[i])
         return iterable
 
 
 class tuple_of(object):
     """Instances of this class are callables which turn a given iterable into a
-    tuple of items with the specified data type."""
+    tuple of items with the specified data type.
+    """
 
     def __init__(self, dtype):
         self.dtype = dtype
 
     def __call__(self, iterable):
         iterable = list(iterable)
-        for i in xrange(len(iterable)):
+        for i in range(len(iterable)):
             iterable[i] = self.dtype(iterable[i])
         return tuple(iterable)
 
 
 def sentence(iterable):
     """Convert all items of the iterable to strings and join them with space
-    characters in between. Return the newly formed string."""
+    characters in between. Return the newly formed string.
+    """
     return ' '.join(str(i) for i in iterable)
 
 
 class apply_all(object):
     """Instances of this class are callables which apply a list of functions to
-    the given object."""
+    the given object.
+    """
 
     def __init__(self, *funcs):
         self.funcs = funcs
@@ -1930,15 +1914,17 @@ class apply_all(object):
 
 def eval_if_str(obj):
     """Evaluate given expression only if string is given, otherwise, leave the
-    given object unchanged."""
-    return eval(obj) if isinstance(obj, basestring) else obj
+    given object unchanged.
+    """
+    return eval(obj) if isinstance(obj, str) else obj
 
 
 class items_of(object):
     """Instances of this class are callables which get a certain item of each
     element of a given iterable, and returns all items in form of a new
     iterable. If item does not exist and a default value is given, return that
-    value."""
+    value.
+    """
 
     def __init__(self, itemname, default=None, dtype=None):
         self.itemname = itemname
@@ -1964,7 +1950,8 @@ class expressions_of(object):
     """Instances of this class are callables which evaluate a certain
     expression for each element of a given iterable, and returns the results as
     in form of a new iterable. In the expression, "x" indicates the respective
-    item."""
+    item.
+    """
 
     def __init__(self, expr='x', dtype=None):
         self.expr = expr
@@ -1981,7 +1968,8 @@ class expressions_of(object):
 
 #def _nicetime(seconds):
 #  """Return nice string representation of the given number of seconds in a
-#  human-readable format (approximated). Example: 3634 s --> 1 h."""
+#  human-readable format (approximated). Example: 3634 s --> 1 h.
+# """
 #  # 2013-08-06
 #  # copied from progress._nicetime (written 2012-09-04)
 #  # copied from tb.misc.nicetime (written 2012-02-17)

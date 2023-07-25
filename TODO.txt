@@ -1,0 +1,34 @@
+# To do / Future Ideas
+
+--> enable parallel execution if in independent execution mode
+--> warn about usage with interactively defined functions? (no __name__)
+--> be able to specify a fixed file, so instead of "$1/some/dataset", be able
+    to specify "some/file.h5/some/dataset" (as well for output)
+    setting default values in input mapping would then only be possible for
+    non-strings (strings were already restricted before, could not start with
+    "$", "%" or "#")
+--> allow dynamic mappings, containing placeholders like {option=default}
+    (also multiple), so that options can be used to set dsetnames/paths or
+    also filenames/paths
+--> allow slices in mappings, like "$1:/dset" (all but the first file) or
+    "$:4" (the first four arguments) or "$:" (all arguments, equivalent to
+    "$@")
+--> case dep+@: be able to restrict number of input/output arguments
+    (min/max)?
+--> understand combined filename/dataset paths, including patterns in both
+    parts of the path (feature which is already provided through h5obj.tools)
+--> in addition, access dataset attributes, e.g. inmap=dict(a='$0/dset/attr')
+--> enable comliner configuration options --preproc and --postproc? (update dict)
+--> even if no arguments are expected at all, make sure the function is still
+    executed
+--> reroute STDOUT and STDERR to file? could be important for parallel
+    execution. DENIED!
+--> if default value is True (or bool in general), behave accordingly
+--> convert Comliner class to a function (not really neccessary, but cleaner)
+--> enable timings in milliseconds, reformat, make a new _nicetime function
+    mapping
+--> allow "$0" in output mapping (as a source), e.g. to access filename
+--> option to "close gaps", i.e. only execute if output datasets do not yet
+    exist
+--> enable option to omit missing input datasets also in sequential mode?
+--> option to omit whole file when one of the input datasets is missing?

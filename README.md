@@ -1,5 +1,5 @@
-frog
-====
+comliner - Command Line Interface Wrapper for Python Functions
+==============================================================
 
 Make programs out of your Python functions that can be run from the command
 line by simply adding a decorator in front of the function. The programs will
@@ -11,8 +11,8 @@ and save data to files (HDF5 format).
 Copyright notice
 ----------------
 
-Copyright (C) 2013-2014 Daniel Jung.
-Contact: djungbremen@gmail.com
+Copyright (C) 2013-2023 Daniel Jung.
+Contact: proggy-contact@mailbox.org
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the Free
