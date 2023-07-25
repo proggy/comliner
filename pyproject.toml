@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "comliner"
-version = "0.4.0"
+version = "0.4.1"
 authors = [
   { name="Daniel Jung", email="proggy-contact@mailbox.org" },
 ]
 maintainers = [
   { name="Daniel Jung", email="proggy-contact@mailbox.org" },
 ]
-description = "Command Line Interface Wrapper for Python Functions. Wrap your Python functions with a simple command line interface, so that they can be run directly from the command line, just like any shell command.  This is achieved by simply adding a decorator in front of the function and creating a small standardized executible script.  The commandline interface is powered by the *optparse* module, and data can optionally be loaded from and saved to HDF5 files, corresponding to the function arguments or return values."
+description = "Command Line Interface Wrapper for Python Functions. Wrap your Python functions with a simple command line interface, so that they can be run directly from the command line, just like any shell command.  This is achieved by simply adding a decorator in front of the function and creating a small standardized executible script."
 readme = "README.md"
 requires-python = ">=3.7"
 classifiers = [

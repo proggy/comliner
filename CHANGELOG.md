@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.4.1
+
+- fix length project description / summary (PyPI allows only 512 characters)
+
 
 ## 0.4.0
 

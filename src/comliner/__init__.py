@@ -50,7 +50,7 @@ corresponds to the number of files). By default, the result of the function
 goes to STDOUT (displayed on the screen). However, the behavior can be
 configured in various ways.
 """
-__version__ = '0.4.0'
+__version__ = '0.4.1'
 
 import inspect
 import os
