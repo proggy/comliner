@@ -11,34 +11,7 @@ authors = [
 maintainers = [
   { name="Daniel Jung", email="proggy-contact@mailbox.org" },
 ]
-description = "comliner - Command Line Interface Wrapper for Python Functions
-
-Wrap your Python functions with a simple command line interface, so that they
-can be run directly from the command line, just like any shell command.  This
-is achieved by simply adding a decorator in front of the function and creating
-a small standardized executible script.  The commandline interface is powered
-by the *optparse* module, and data can optionally be loaded from and saved
-to HDF5 files, corresponding to the function arguments or return values.
-
-Simple example:
-
-    >>> # file "my_module.py"
-    >>> from comliner import Comliner, list_of
-    >>> @Comliner(inmap=dict(x='$@/dset'), preproc=dict(x=list_of(float)))
-    >>> def mean(x):
-    >>>     return sum(x)/len(x)
-
-Now, you can create a small executable script with the following content:
-
-    >>> import sys, my_module
-    >>> sys.exit(my_module._mean())
-
-The way the Comliner is configured in this example, it expects you to specify
-a bunch of HDF5 data files, where each file has a scalar dataset called *dset*,
-and the function will be called with the list [x1, x2, x3, ...] (its length
-corresponds to the number of files). By default, the result of the function
-goes to STDOUT (displayed on the screen). However, the behavior can be
-configured in various ways."
+description = "Command Line Interface Wrapper for Python Functions. Wrap your Python functions with a simple command line interface, so that they can be run directly from the command line, just like any shell command.  This is achieved by simply adding a decorator in front of the function and creating a small standardized executible script.  The commandline interface is powered by the *optparse* module, and data can optionally be loaded from and saved to HDF5 files, corresponding to the function arguments or return values."
 readme = "README.md"
 requires-python = ">=3.7"
 classifiers = [
